@@ -1,0 +1,65 @@
+{
+  "name": "atlassian-confluence-mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for Atlassian Confluence. Enables AI assistants like Claude and Windsurf to read, create, search, and manage wiki pages on Cloud, on-premise Server, and Data Center.",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "bin": {
+    "atlassian-confluence-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "confluence",
+    "atlassian",
+    "atlassian-confluence",
+    "model-context-protocol",
+    "wiki",
+    "claude",
+    "windsurf",
+    "ai",
+    "llm",
+    "data-center",
+    "on-premise"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.3.1",
+    "node-abort-controller": "^3.1.1",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/node-fetch": "^2.6.9",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anuragagrawal0430/atlassian-confluence-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anuragagrawal0430/atlassian-confluence-mcp-server/issues"
+  },
+  "homepage": "https://github.com/anuragagrawal0430/atlassian-confluence-mcp-server#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}
