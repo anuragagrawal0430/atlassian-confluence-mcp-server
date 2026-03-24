@@ -66,6 +66,25 @@ This project follows these security practices:
 - **Error sanitization** to prevent server info leakage
 - **Pagination limits** to prevent abuse
 
+## Network Access Disclosure
+
+This package **intentionally makes network requests** to Confluence instances. This is required functionality for an MCP server that integrates with Atlassian Confluence.
+
+### Network Security Measures
+
+- **Protocol validation**: Only `http://` and `https://` URLs are allowed
+- **No embedded credentials**: URLs with embedded username/password are rejected
+- **User-controlled endpoints**: The target URL is explicitly configured via `CONFLUENCE_BASE_URL` environment variable
+- **Localhost warnings**: Connections to localhost trigger a warning for awareness
+
+### Why Network Access is Required
+
+This package is designed to:
+1. Connect to Atlassian Confluence Cloud (`*.atlassian.net`)
+2. Connect to self-hosted Confluence Server/Data Center instances
+
+Without network access, the package cannot fulfill its core purpose of providing MCP tools for Confluence integration.
+
 ## Coordinated Disclosure
 
 We follow coordinated disclosure principles:

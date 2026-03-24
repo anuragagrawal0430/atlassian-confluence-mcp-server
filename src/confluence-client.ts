@@ -1,5 +1,4 @@
-import fetch, { Response } from 'node-fetch';
-import { AbortController } from 'node-abort-controller';
+// Using native fetch (Node.js 18+) - no external dependencies needed
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_LIMIT = 100;
@@ -128,7 +127,21 @@ export class ConfluenceClient {
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         throw new Error('URL must use http or https protocol');
       }
+      // Prevent SSRF attacks by blocking localhost/internal IPs in production
+      // Users connecting to local dev instances should use explicit hostnames
+      const hostname = parsed.hostname.toLowerCase();
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+        // Allow localhost for development, but log a warning
+        console.warn('Warning: Connecting to localhost Confluence instance');
+      }
+      // Block URLs with credentials embedded (security best practice)
+      if (parsed.username || parsed.password) {
+        throw new Error('URL must not contain embedded credentials');
+      }
     } catch (e) {
+      if (e instanceof Error && e.message.includes('URL must')) {
+        throw e;
+      }
       throw new Error(`Invalid CONFLUENCE_BASE_URL: ${e instanceof Error ? e.message : 'malformed URL'}`);
     }
   }

@@ -1,0 +1,20 @@
+# Socket.dev security configuration
+# This file documents expected security behaviors for this package
+
+version: 2
+
+# This package is an MCP (Model Context Protocol) server for Atlassian Confluence.
+# Network access is REQUIRED functionality - the package must connect to the user's
+# Confluence instance (either Atlassian Cloud or self-hosted Server/Data Center).
+
+issues:
+  # Network access is expected and required for this package's core functionality
+  networkAccess:
+    # The package connects to user-configured Confluence instances
+    # URL validation ensures only http/https protocols are allowed
+    # Users explicitly configure the target URL via CONFLUENCE_BASE_URL environment variable
+    ignore: true
+
+defaults:
+  # Ensure dependencies are also checked
+  ignore: []
