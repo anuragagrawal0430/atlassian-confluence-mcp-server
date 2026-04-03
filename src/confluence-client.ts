@@ -113,11 +113,15 @@ export class ConfluenceClient {
   constructor(config: ConfluenceConfig) {
     this.validateBaseUrl(config.baseUrl);
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
+    const parsedBaseUrl = new URL(this.baseUrl);
+    const hostname = parsedBaseUrl.hostname.toLowerCase();
     // Strip accidental "Bearer " prefix if user included it in the token value
     this.pat = config.pat?.replace(/^Bearer\s+/i, '');
     this.username = config.username;
     this.password = config.password;
-    this.isCloud = config.isCloud ?? config.baseUrl.includes('.atlassian.net');
+    const isAtlassianCloudHost =
+      hostname === 'atlassian.net' || hostname.endsWith('.atlassian.net');
+    this.isCloud = config.isCloud ?? isAtlassianCloudHost;
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
