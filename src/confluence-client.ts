@@ -193,8 +193,8 @@ export class ConfluenceClient {
       ? responseText.substring(0, 500) + '... [truncated]'
       : responseText;
 
-    // Strip HTML content that could leak server internals
-    const cleaned = truncated.replace(/<[^>]*>/g, '').trim();
+    // Strip HTML-like content that could leak server internals or be misinterpreted as markup
+    const cleaned = truncated.replace(/[<>]/g, '').trim();
     return `Confluence API error (${status} ${statusText}): ${cleaned || 'No details available'}`;
   }
 
