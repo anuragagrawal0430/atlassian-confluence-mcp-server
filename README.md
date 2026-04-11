@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/anuragagrawal0430/atlassian-confluence-mcp-server/workflows/CI/badge.svg)](https://github.com/anuragagrawal0430/atlassian-confluence-mcp-server/actions)
 [![npm version](https://badge.fury.io/js/atlassian-confluence-mcp-server.svg)](https://badge.fury.io/js/atlassian-confluence-mcp-server)
+
+[![npm downloads](https://img.shields.io/npm/dm/atlassian-confluence-mcp-server.svg)](https://www.npmjs.com/package/atlassian-confluence-mcp-server)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server** for **Atlassian Confluence** that lets AI assistants like **Claude** and **Windsurf** read, create, search, and manage Confluence wiki pages. Works with **Confluence Cloud**, **on-premise Server**, and **Data Center** deployments — connect your AI coding agent to your team's knowledge base in seconds via `npx`.
