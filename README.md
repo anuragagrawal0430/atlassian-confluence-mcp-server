@@ -7,6 +7,14 @@
 
 An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server** for **Atlassian Confluence** that lets AI assistants like **Claude** and **Windsurf** read, create, search, and manage Confluence wiki pages. Works with **Confluence Cloud**, **on-premise Server**, and **Data Center** deployments — connect your AI coding agent to your team's knowledge base in seconds via `npx`.
 
+## Why atlassian-confluence-mcp-server?
+
+- ✅ Only MCP server supporting **Cloud + Server + Data Center** in one package
+- ✅ 28 tools — most comprehensive Confluence MCP available
+- ✅ Zero config via `npx` — no install needed
+- ✅ PAT, Basic Auth, and API token support
+- ✅ Actively maintained with provenance-signed releases
+
 ## Features
 
 - **Space Management** — List and inspect spaces
