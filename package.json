@@ -17,19 +17,11 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "mcp",
-    "confluence",
-    "atlassian",
-    "atlassian-confluence",
-    "model-context-protocol",
-    "wiki",
-    "claude",
-    "windsurf",
-    "ai",
-    "llm",
-    "data-center",
-    "on-premise"
-  ],
+  "mcp", "model-context-protocol", "confluence", "atlassian",
+  "confluence-cloud", "confluence-server", "confluence-data-center",
+  "mcp-server", "claude", "windsurf", "typescript", "nodejs",
+  "confluence-api", "atlassian-confluence", "wiki", "ai-tools"
+],
   "author": "",
   "license": "MIT",
   "dependencies": {
