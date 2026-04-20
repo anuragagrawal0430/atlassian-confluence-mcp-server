@@ -15,6 +15,18 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 - ✅ PAT, Basic Auth, and API token support
 - ✅ Actively maintained with provenance-signed releases
 
+## Why use this instead of Atlassian's official MCP server?
+
+| Feature | This package | Atlassian Official |
+|---|---|---|
+| Confluence Cloud | ✅ | ✅ |
+| On-premise Server | ✅ | ❌ |
+| Data Center | ✅ | ❌ |
+| Zero config via npx | ✅ | ❌ |
+| 28 tools | ✅ | Limited |
+| Open source | ✅ MIT | ✅ |
+| Works offline/intranet | ✅ | ❌ |
+
 ## Features
 
 - **Space Management** — List and inspect spaces
