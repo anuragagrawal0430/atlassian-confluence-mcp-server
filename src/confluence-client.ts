@@ -126,27 +126,26 @@ export class ConfluenceClient {
   }
 
   private validateBaseUrl(url: string): void {
+    let parsed: URL;
     try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        throw new Error('URL must use http or https protocol');
-      }
-      // Prevent SSRF attacks by blocking localhost/internal IPs in production
-      // Users connecting to local dev instances should use explicit hostnames
-      const hostname = parsed.hostname.toLowerCase();
-      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-        // Allow localhost for development, but log a warning
-        console.warn('Warning: Connecting to localhost Confluence instance');
-      }
-      // Block URLs with credentials embedded (security best practice)
-      if (parsed.username || parsed.password) {
-        throw new Error('URL must not contain embedded credentials');
-      }
+      parsed = new URL(url);
     } catch (e) {
-      if (e instanceof Error && e.message.includes('URL must')) {
-        throw e;
-      }
       throw new Error(`Invalid CONFLUENCE_BASE_URL: ${e instanceof Error ? e.message : 'malformed URL'}`);
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('URL must use http or https protocol');
+    }
+    // Prevent SSRF attacks by blocking localhost/internal IPs in production
+    // Users connecting to local dev instances should use explicit hostnames
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      // Allow localhost for development, but log a warning
+      console.warn('Warning: Connecting to localhost Confluence instance');
+    }
+    // Block URLs with credentials embedded (security best practice)
+    if (parsed.username || parsed.password) {
+      throw new Error('URL must not contain embedded credentials');
     }
   }
 
@@ -222,7 +221,15 @@ export class ConfluenceClient {
         options.body = JSON.stringify(body);
       }
 
-      const response = await fetch(url, options);
+      let response: Response;
+      try {
+        response = await fetch(url, options);
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error(`Request timed out after ${this.timeoutMs}ms: ${method} ${endpoint}`);
+        }
+        throw error;
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -234,11 +241,6 @@ export class ConfluenceClient {
       }
 
       return response.json() as Promise<T>;
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`Request timed out after ${this.timeoutMs}ms: ${method} ${endpoint}`);
-      }
-      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -440,6 +442,14 @@ export class ConfluenceClient {
 
   async getPageAttachments(pageId: string): Promise<{ results: Attachment[] }> {
     const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    return this.request<{ results: Attachment[] }>(
+      `${prefix}/rest/api/content/${encodeURIComponent(id)}/child/attachment`
+    );
+  }
+
+  async getCommentAttachments(commentId: string): Promise<{ results: Attachment[] }> {
+    const id = ConfluenceClient.sanitizeParam(commentId, 'commentId');
     const prefix = this.getApiPrefix();
     return this.request<{ results: Attachment[] }>(
       `${prefix}/rest/api/content/${encodeURIComponent(id)}/child/attachment`

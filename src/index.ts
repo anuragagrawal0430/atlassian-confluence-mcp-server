@@ -375,6 +375,20 @@ const tools = [
       required: ['pageId'],
     },
   },
+  {
+    name: 'confluence_get_comment_attachments',
+    description: 'Get attachments on a comment',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commentId: {
+          type: 'string',
+          description: 'The comment ID',
+        },
+      },
+      required: ['commentId'],
+    },
+  },
   // Page Hierarchy
   {
     name: 'confluence_get_child_pages',
@@ -670,6 +684,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         result = await confluenceClient.getPageAttachments(args?.pageId as string);
         break;
 
+      case 'confluence_get_comment_attachments':
+        result = await confluenceClient.getCommentAttachments(args?.commentId as string);
+        break;
+
       // Page Hierarchy
       case 'confluence_get_child_pages':
         result = await confluenceClient.getChildPages(
@@ -733,7 +751,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
 
       default:
-        throw new Error(`Unknown tool: ${name}`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error: Unknown tool: ${name}`,
+            },
+          ],
+          isError: true,
+        };
     }
 
     return {

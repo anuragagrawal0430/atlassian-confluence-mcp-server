@@ -10,7 +10,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 ## Why atlassian-confluence-mcp-server?
 
 - ✅ Only MCP server supporting **Cloud + Server + Data Center** in one package
-- ✅ 28 tools — most comprehensive Confluence MCP available
+- ✅ 29 tools — most comprehensive Confluence MCP available
 - ✅ Zero config via `npx` — no install needed
 - ✅ PAT, Basic Auth, and API token support
 - ✅ Actively maintained with provenance-signed releases
@@ -23,7 +23,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 | On-premise Server | ✅ | ❌ |
 | Data Center | ✅ | ❌ |
 | Zero config via npx | ✅ | ❌ |
-| 28 tools | ✅ | Limited |
+| 29 tools | ✅ | Limited |
 | Open source | ✅ MIT | ✅ |
 | Works offline/intranet | ✅ | ❌ |
 
@@ -34,7 +34,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 - **Search** — Full CQL and text search
 - **Labels** — Add, list, and remove page labels
 - **Comments** — Read and post page comments
-- **Attachments** — List page attachments
+- **Attachments** — List page and comment attachments
 - **Page Hierarchy** — Navigate parent/child relationships
 - **Version History** — Browse and inspect page versions
 - **Personal Space** — Create pages in your personal space
@@ -188,7 +188,7 @@ CONFLUENCE_PASSWORD=your-password
 }
 ```
 
-## Available Tools (28)
+## Available Tools (29)
 
 ### Connection
 | Tool | Description |
@@ -235,6 +235,7 @@ CONFLUENCE_PASSWORD=your-password
 | Tool | Description |
 |------|-------------|
 | `confluence_get_page_attachments` | List attachments on a page |
+| `confluence_get_comment_attachments` | List attachments on a comment |
 
 ### Page Hierarchy
 | Tool | Description |
