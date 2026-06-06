@@ -549,6 +549,266 @@ const tools = [
       required: ['name'],
     },
   },
+  // Space Management
+  {
+    name: 'confluence_create_space',
+    description: 'Create a new space',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        spaceKey: {
+          type: 'string',
+          description: 'Unique key for the space (e.g., "DEV", "DOCS")',
+        },
+        name: {
+          type: 'string',
+          description: 'Display name for the space',
+        },
+        description: {
+          type: 'string',
+          description: 'Optional description for the space',
+        },
+      },
+      required: ['spaceKey', 'name'],
+    },
+  },
+  {
+    name: 'confluence_delete_space',
+    description: 'Delete a space and all its content',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        spaceKey: {
+          type: 'string',
+          description: 'The space key to delete',
+        },
+      },
+      required: ['spaceKey'],
+    },
+  },
+  {
+    name: 'confluence_get_space_homepage',
+    description: 'Get the homepage of a space',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        spaceKey: {
+          type: 'string',
+          description: 'The space key',
+        },
+      },
+      required: ['spaceKey'],
+    },
+  },
+  // Page Copy/Move
+  {
+    name: 'confluence_copy_page',
+    description: 'Copy a page, optionally to a different space',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to copy',
+        },
+        destinationSpaceKey: {
+          type: 'string',
+          description: 'Optional destination space key (defaults to same space)',
+        },
+        newTitle: {
+          type: 'string',
+          description: 'Optional new title (defaults to "Copy of [original title]")',
+        },
+        parentId: {
+          type: 'string',
+          description: 'Optional parent page ID in the destination',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
+  {
+    name: 'confluence_move_page',
+    description: 'Move a page to a different parent or space',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to move',
+        },
+        targetSpaceKey: {
+          type: 'string',
+          description: 'Optional target space key',
+        },
+        targetParentId: {
+          type: 'string',
+          description: 'Optional target parent page ID',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
+  // Watchers
+  {
+    name: 'confluence_get_page_watchers',
+    description: 'Get users watching a page',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
+  {
+    name: 'confluence_watch_page',
+    description: 'Add current user as a watcher of a page',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to watch',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
+  {
+    name: 'confluence_unwatch_page',
+    description: 'Remove current user as a watcher of a page',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to unwatch',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
+  // Permissions
+  {
+    name: 'confluence_get_page_permissions',
+    description: 'Get page restrictions/permissions',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
+  {
+    name: 'confluence_set_page_permissions',
+    description: 'Set page restrictions/permissions. For Cloud, use accountId for users. For Server/DC, use name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID',
+        },
+        restrictions: {
+          type: 'array',
+          description: 'Array of restriction objects with operation (read/update) and user/group restrictions',
+          items: {
+            type: 'object',
+            properties: {
+              operation: {
+                type: 'string',
+                enum: ['read', 'update'],
+                description: 'The operation to restrict',
+              },
+              restrictions: {
+                type: 'object',
+                properties: {
+                  user: {
+                    type: 'array',
+                    description: 'Users to restrict. Use accountId for Cloud, name for Server/DC.',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string', description: 'Username (Server/DC)' },
+                        accountId: { type: 'string', description: 'Account ID (Cloud)' },
+                      },
+                    },
+                  },
+                  group: {
+                    type: 'array',
+                    items: { type: 'object', properties: { name: { type: 'string' } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      required: ['pageId', 'restrictions'],
+    },
+  },
+  // Recently Modified
+  {
+    name: 'confluence_get_recently_modified',
+    description: 'Get recently modified pages',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        spaceKey: {
+          type: 'string',
+          description: 'Optional space key to filter by',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results (default: 25)',
+        },
+      },
+      required: [],
+    },
+  },
+  // Tasks
+  {
+    name: 'confluence_get_page_tasks',
+    description: 'Get inline tasks from a page',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
+  // Export
+  {
+    name: 'confluence_export_page',
+    description: 'Get export URL for a page (PDF or Word)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to export',
+        },
+        format: {
+          type: 'string',
+          enum: ['pdf', 'word'],
+          description: 'Export format (default: pdf)',
+        },
+      },
+      required: ['pageId'],
+    },
+  },
 ];
 
 // ==================== TOOL HANDLERS ====================
@@ -747,6 +1007,90 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         result = await confluenceClient.createPrivateSpace(
           args?.name as string,
           args?.description as string
+        );
+        break;
+
+      // Space Management
+      case 'confluence_create_space':
+        result = await confluenceClient.createSpace(
+          args?.spaceKey as string,
+          args?.name as string,
+          args?.description as string
+        );
+        break;
+
+      case 'confluence_delete_space':
+        await confluenceClient.deleteSpace(args?.spaceKey as string);
+        result = { success: true, message: 'Space deleted successfully' };
+        break;
+
+      case 'confluence_get_space_homepage':
+        result = await confluenceClient.getSpaceHomepage(args?.spaceKey as string);
+        break;
+
+      // Page Copy/Move
+      case 'confluence_copy_page':
+        result = await confluenceClient.copyPage(
+          args?.pageId as string,
+          args?.destinationSpaceKey as string,
+          args?.newTitle as string,
+          args?.parentId as string
+        );
+        break;
+
+      case 'confluence_move_page':
+        result = await confluenceClient.movePage(
+          args?.pageId as string,
+          args?.targetSpaceKey as string,
+          args?.targetParentId as string
+        );
+        break;
+
+      // Watchers
+      case 'confluence_get_page_watchers':
+        result = await confluenceClient.getPageWatchers(args?.pageId as string);
+        break;
+
+      case 'confluence_watch_page':
+        await confluenceClient.watchPage(args?.pageId as string);
+        result = { success: true, message: 'Now watching page' };
+        break;
+
+      case 'confluence_unwatch_page':
+        await confluenceClient.unwatchPage(args?.pageId as string);
+        result = { success: true, message: 'Stopped watching page' };
+        break;
+
+      // Permissions
+      case 'confluence_get_page_permissions':
+        result = await confluenceClient.getPagePermissions(args?.pageId as string);
+        break;
+
+      case 'confluence_set_page_permissions':
+        result = await confluenceClient.setPagePermissions(
+          args?.pageId as string,
+          args?.restrictions as any[]
+        );
+        break;
+
+      // Recently Modified
+      case 'confluence_get_recently_modified':
+        result = await confluenceClient.getRecentlyModifiedPages(
+          args?.spaceKey as string,
+          args?.limit as number
+        );
+        break;
+
+      // Tasks
+      case 'confluence_get_page_tasks':
+        result = await confluenceClient.getPageTasks(args?.pageId as string);
+        break;
+
+      // Export
+      case 'confluence_export_page':
+        result = await confluenceClient.exportPage(
+          args?.pageId as string,
+          (args?.format as 'pdf' | 'word') ?? 'pdf'
         );
         break;
 

@@ -10,7 +10,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 ## Why atlassian-confluence-mcp-server?
 
 - ✅ Only MCP server supporting **Cloud + Server + Data Center** in one package
-- ✅ 29 tools — most comprehensive Confluence MCP available
+- ✅ **42 tools** — most comprehensive Confluence MCP available
 - ✅ Zero config via `npx` — no install needed
 - ✅ PAT, Basic Auth, and API token support
 - ✅ Actively maintained with provenance-signed releases
@@ -23,20 +23,30 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 | On-premise Server | ✅ | ❌ |
 | Data Center | ✅ | ❌ |
 | Zero config via npx | ✅ | ❌ |
-| 29 tools | ✅ | Limited |
+| **42 tools** | ✅ | ~15 tools |
+| Space management (create/delete) | ✅ | ❌ |
+| Page copy/move | ✅ | ❌ |
+| Watchers | ✅ | ❌ |
+| Permissions/restrictions | ✅ | ❌ |
+| Task extraction | ✅ | ❌ |
+| Export (PDF/Word) | ✅ | ❌ |
 | Open source | ✅ MIT | ✅ |
 | Works offline/intranet | ✅ | ❌ |
 
 ## Features
 
-- **Space Management** — List and inspect spaces
-- **Page CRUD** — Create, read, update, and delete pages
-- **Search** — Full CQL and text search
+- **Space Management** — Create, delete, list, and inspect spaces
+- **Page CRUD** — Create, read, update, delete, copy, and move pages
+- **Search** — Full CQL and text search, recently modified pages
 - **Labels** — Add, list, and remove page labels
 - **Comments** — Read and post page comments
 - **Attachments** — List page and comment attachments
 - **Page Hierarchy** — Navigate parent/child relationships
 - **Version History** — Browse and inspect page versions
+- **Watchers** — View and manage page watchers
+- **Permissions** — Get and set page restrictions
+- **Tasks** — Extract inline tasks from pages
+- **Export** — Generate PDF/Word export URLs
 - **Personal Space** — Create pages in your personal space
 - **URL Parsing** — Retrieve page content from a Confluence URL
 
@@ -188,7 +198,7 @@ CONFLUENCE_PASSWORD=your-password
 }
 ```
 
-## Available Tools (29)
+## Available Tools (42)
 
 ### Connection
 | Tool | Description |
@@ -201,6 +211,9 @@ CONFLUENCE_PASSWORD=your-password
 | `confluence_get_spaces` | List all spaces |
 | `confluence_get_space` | Get space details by key |
 | `confluence_get_space_by_key` | Alias for `get_space` |
+| `confluence_create_space` | Create a new space |
+| `confluence_delete_space` | Delete a space and all its content |
+| `confluence_get_space_homepage` | Get the homepage of a space |
 
 ### Pages
 | Tool | Description |
@@ -211,12 +224,15 @@ CONFLUENCE_PASSWORD=your-password
 | `confluence_create_page` | Create a new page |
 | `confluence_update_page` | Update an existing page |
 | `confluence_delete_page` | Delete a page |
+| `confluence_copy_page` | Copy a page, optionally to a different space |
+| `confluence_move_page` | Move a page to a different parent or space |
 
 ### Search
 | Tool | Description |
 |------|-------------|
 | `confluence_search` | Search using CQL |
 | `confluence_search_pages` | Search pages by text |
+| `confluence_get_recently_modified` | Get recently modified pages |
 
 ### Labels
 | Tool | Description |
@@ -258,6 +274,29 @@ CONFLUENCE_PASSWORD=your-password
 | Tool | Description |
 |------|-------------|
 | `confluence_get_current_user` | Get current authenticated user |
+
+### Watchers
+| Tool | Description |
+|------|-------------|
+| `confluence_get_page_watchers` | Get users watching a page |
+| `confluence_watch_page` | Add current user as a watcher |
+| `confluence_unwatch_page` | Remove current user as a watcher |
+
+### Permissions
+| Tool | Description |
+|------|-------------|
+| `confluence_get_page_permissions` | Get page restrictions/permissions |
+| `confluence_set_page_permissions` | Set page restrictions/permissions |
+
+### Tasks
+| Tool | Description |
+|------|-------------|
+| `confluence_get_page_tasks` | Extract inline tasks from a page |
+
+### Export
+| Tool | Description |
+|------|-------------|
+| `confluence_export_page` | Get export URL for a page (PDF or Word) |
 
 ### Utilities
 | Tool | Description |

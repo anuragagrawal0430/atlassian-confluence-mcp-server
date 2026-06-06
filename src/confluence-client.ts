@@ -697,4 +697,274 @@ export class ConfluenceClient {
     };
     return this.request<any>(`${prefix}/rest/api/space/_private`, 'POST', payload);
   }
+
+  // ==================== SPACE MANAGEMENT ====================
+
+  async createSpace(
+    spaceKey: string,
+    name: string,
+    description?: string
+  ): Promise<any> {
+    const key = ConfluenceClient.sanitizeParam(spaceKey, 'spaceKey');
+    const safeName = ConfluenceClient.sanitizeParam(name, 'name');
+    const prefix = this.getApiPrefix();
+    const payload: any = {
+      key,
+      name: safeName,
+      description: description ? {
+        plain: {
+          value: description.trim(),
+          representation: 'plain'
+        }
+      } : undefined
+    };
+    return this.request<any>(`${prefix}/rest/api/space`, 'POST', payload);
+  }
+
+  async deleteSpace(spaceKey: string): Promise<void> {
+    const key = ConfluenceClient.sanitizeParam(spaceKey, 'spaceKey');
+    const prefix = this.getApiPrefix();
+    await this.request<void>(`${prefix}/rest/api/space/${encodeURIComponent(key)}`, 'DELETE');
+  }
+
+  async getSpaceHomepage(spaceKey: string): Promise<any> {
+    const key = ConfluenceClient.sanitizeParam(spaceKey, 'spaceKey');
+    const prefix = this.getApiPrefix();
+    const space = await this.request<any>(
+      `${prefix}/rest/api/space/${encodeURIComponent(key)}?expand=homepage`
+    );
+    if (!space.homepage) {
+      throw new Error(`Space ${key} does not have a homepage`);
+    }
+    return this.getPage(space.homepage.id);
+  }
+
+  // ==================== PAGE COPY/MOVE ====================
+
+  async copyPage(
+    pageId: string,
+    destinationSpaceKey?: string,
+    newTitle?: string,
+    parentId?: string
+  ): Promise<any> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    
+    // Get the original page
+    const originalPage = await this.getPage(id);
+    const targetSpaceKey = destinationSpaceKey?.trim() || originalPage.space?.key;
+    const targetTitle = newTitle?.trim() || `Copy of ${originalPage.title}`;
+    
+    if (!targetSpaceKey) {
+      throw new Error('Could not determine destination space key');
+    }
+    
+    // Create a copy with the same content
+    return this.createPage(
+      targetSpaceKey,
+      targetTitle,
+      originalPage.body?.storage?.value || '',
+      parentId
+    );
+  }
+
+  async movePage(
+    pageId: string,
+    targetSpaceKey?: string,
+    targetParentId?: string
+  ): Promise<any> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    
+    // Get current page to preserve content
+    const page = await this.getPage(id);
+    const currentVersion = page.version?.number;
+    
+    if (!currentVersion) {
+      throw new Error('Could not determine current page version');
+    }
+    
+    const payload: any = {
+      type: 'page',
+      title: page.title,
+      version: { number: currentVersion + 1 },
+    };
+    
+    // Set new space if provided
+    if (targetSpaceKey) {
+      payload.space = { key: ConfluenceClient.sanitizeParam(targetSpaceKey, 'targetSpaceKey') };
+    }
+    
+    // Set new parent if provided
+    if (targetParentId) {
+      payload.ancestors = [{ id: ConfluenceClient.sanitizeParam(targetParentId, 'targetParentId') }];
+    } else if (targetSpaceKey && !targetParentId) {
+      // Moving to new space root - clear ancestors
+      payload.ancestors = [];
+    }
+    
+    return this.request<any>(
+      `${prefix}/rest/api/content/${encodeURIComponent(id)}`,
+      'PUT',
+      payload
+    );
+  }
+
+  // ==================== WATCHERS ====================
+
+  async getPageWatchers(pageId: string): Promise<{ results: any[] }> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    return this.request<{ results: any[] }>(
+      `${prefix}/rest/api/content/${encodeURIComponent(id)}/notification/child-created`
+    );
+  }
+
+  async watchPage(pageId: string): Promise<any> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    return this.request<any>(
+      `${prefix}/rest/api/user/watch/content/${encodeURIComponent(id)}`,
+      'POST'
+    );
+  }
+
+  async unwatchPage(pageId: string): Promise<void> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    await this.request<void>(
+      `${prefix}/rest/api/user/watch/content/${encodeURIComponent(id)}`,
+      'DELETE'
+    );
+  }
+
+  // ==================== PERMISSIONS/RESTRICTIONS ====================
+
+  async getPagePermissions(pageId: string): Promise<any> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    return this.request<any>(
+      `${prefix}/rest/api/content/${encodeURIComponent(id)}/restriction`
+    );
+  }
+
+  async setPagePermissions(
+    pageId: string,
+    restrictions: {
+      operation: 'read' | 'update';
+      restrictions: {
+        user?: { name?: string; accountId?: string }[];
+        group?: { name: string }[];
+      };
+    }[]
+  ): Promise<any> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    
+    // Transform restrictions for Cloud vs Server/DC
+    // Cloud uses accountId, Server/DC uses name
+    const transformedRestrictions = restrictions.map(r => ({
+      operation: r.operation,
+      restrictions: {
+        user: r.restrictions.user?.map(u => {
+          if (this.isCloud) {
+            // Cloud: prefer accountId, fall back to name if accountId not provided
+            return u.accountId ? { accountId: u.accountId } : { username: u.name };
+          }
+          // Server/DC: use name
+          return { name: u.name };
+        }),
+        group: r.restrictions.group,
+      },
+    }));
+    
+    return this.request<any>(
+      `${prefix}/rest/api/content/${encodeURIComponent(id)}/restriction`,
+      'PUT',
+      transformedRestrictions
+    );
+  }
+
+  // ==================== RECENTLY MODIFIED ====================
+
+  async getRecentlyModifiedPages(
+    spaceKey?: string,
+    limit: number = 25
+  ): Promise<any> {
+    const safeLimit = ConfluenceClient.clampLimit(limit);
+    let cql = 'type=page ORDER BY lastmodified DESC';
+    if (spaceKey) {
+      const safeKey = ConfluenceClient.escapeCqlString(spaceKey.trim());
+      cql = `type=page AND space="${safeKey}" ORDER BY lastmodified DESC`;
+    }
+    return this.searchContent(cql, safeLimit);
+  }
+
+  // ==================== TASKS ====================
+
+  async getPageTasks(pageId: string): Promise<{ results: any[] }> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    // Tasks are stored as inline tasks in the page content
+    // We need to get the page and parse tasks from the body
+    const page = await this.getPage(id, true);
+    const body = page.body?.storage?.value || '';
+    
+    // Extract inline tasks from storage format
+    // Tasks are in format: <ac:task><ac:task-id>ID</ac:task-id><ac:task-status>STATUS</ac:task-status><ac:task-body>CONTENT</ac:task-body></ac:task>
+    const taskRegex = /<ac:task>[\s\S]*?<ac:task-id>([^<]+)<\/ac:task-id>[\s\S]*?<ac:task-status>([^<]+)<\/ac:task-status>[\s\S]*?<ac:task-body>([\s\S]*?)<\/ac:task-body>[\s\S]*?<\/ac:task>/g;
+    const tasks: any[] = [];
+    let match;
+    
+    while ((match = taskRegex.exec(body)) !== null) {
+      tasks.push({
+        id: match[1],
+        status: match[2],
+        body: match[3].replace(/<[^>]+>/g, '').trim(), // Strip HTML tags for readability
+      });
+    }
+    
+    return { results: tasks };
+  }
+
+  // ==================== EXPORT ====================
+
+  async exportPage(
+    pageId: string,
+    format: 'pdf' | 'word' = 'pdf'
+  ): Promise<{ downloadUrl: string; message: string }> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    
+    // Get page info for the export URL
+    const page = await this.getPage(id, false);
+    const spaceKey = page.space?.key;
+    
+    if (!spaceKey) {
+      throw new Error('Could not determine space key for export');
+    }
+    
+    let exportPath: string;
+    let message: string;
+    
+    if (this.isCloud) {
+      // Confluence Cloud export URLs
+      if (format === 'pdf') {
+        exportPath = `${prefix}/spaces/${encodeURIComponent(spaceKey)}/pages/${id}/export/pdf`;
+        message = 'PDF export URL generated. Note: Confluence Cloud PDF export requires the "Confluence PDF Export" app to be installed.';
+      } else {
+        exportPath = `${prefix}/exportword?pageId=${id}`;
+        message = 'Word export URL generated. Open this URL in a browser while authenticated to download the file.';
+      }
+    } else {
+      // Server/Data Center export URLs
+      exportPath = format === 'pdf'
+        ? `${prefix}/spaces/flyingpdf/pdfpageexport.action?pageId=${id}`
+        : `${prefix}/exportword?pageId=${id}`;
+      message = `Export URL generated. Open this URL in a browser while authenticated to download the ${format.toUpperCase()} file.`;
+    }
+    
+    return {
+      downloadUrl: `${this.baseUrl}${exportPath}`,
+      message,
+    };
+  }
 }

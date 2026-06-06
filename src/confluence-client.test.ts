@@ -673,4 +673,560 @@ describe('ConfluenceClient', () => {
       );
     });
   });
+
+  describe('createSpace', () => {
+    it('should create a space with required fields', async () => {
+      const mockSpace = { id: 1, key: 'NEW', name: 'New Space' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockSpace),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.createSpace('NEW', 'New Space');
+      expect(result.key).toBe('NEW');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://confluence.example.com/rest/api/space',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"key":"NEW"'),
+        })
+      );
+    });
+
+    it('should create a space with description', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.createSpace('NEW', 'New Space', 'A description');
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('A description'),
+        })
+      );
+    });
+  });
+
+  describe('deleteSpace', () => {
+    it('should delete a space', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+        json: () => Promise.resolve({}),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.deleteSpace('OLD');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://confluence.example.com/rest/api/space/OLD',
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+  });
+
+  describe('getSpaceHomepage', () => {
+    it('should get space homepage', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ key: 'DEV', homepage: { id: '123' } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123', title: 'Home' }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.getSpaceHomepage('DEV');
+      expect(result.id).toBe('123');
+    });
+
+    it('should throw if space has no homepage', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ key: 'DEV' }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await expect(client.getSpaceHomepage('DEV')).rejects.toThrow('does not have a homepage');
+    });
+  });
+
+  describe('copyPage', () => {
+    it('should copy a page to same space', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Original',
+            space: { key: 'DEV' },
+            body: { storage: { value: '<p>Content</p>' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '456', title: 'Copy of Original' }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.copyPage('123');
+      expect(result.title).toBe('Copy of Original');
+    });
+
+    it('should copy a page to different space with new title', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Original',
+            space: { key: 'DEV' },
+            body: { storage: { value: '<p>Content</p>' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '789' }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.copyPage('123', 'PROD', 'New Title');
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"title":"New Title"'),
+        })
+      );
+    });
+  });
+
+  describe('movePage', () => {
+    it('should move a page to new parent', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Page',
+            version: { number: 5 },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123' }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.movePage('123', undefined, '999');
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        'https://confluence.example.com/rest/api/content/123',
+        expect.objectContaining({
+          method: 'PUT',
+          body: expect.stringContaining('"ancestors":[{"id":"999"}]'),
+        })
+      );
+    });
+
+    it('should move a page to new space', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Page',
+            version: { number: 3 },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({}),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.movePage('123', 'NEWSPACE');
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"space":{"key":"NEWSPACE"}'),
+        })
+      );
+    });
+  });
+
+  describe('watchers', () => {
+    it('should get page watchers', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ results: [{ username: 'user1' }] }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.getPageWatchers('123');
+      expect(result.results).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://confluence.example.com/rest/api/content/123/notification/child-created',
+        expect.any(Object)
+      );
+    });
+
+    it('should watch a page', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.watchPage('123');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://confluence.example.com/rest/api/user/watch/content/123',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should unwatch a page', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+        json: () => Promise.resolve({}),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.unwatchPage('123');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://confluence.example.com/rest/api/user/watch/content/123',
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+  });
+
+  describe('permissions', () => {
+    it('should get page permissions', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ read: { restrictions: {} } }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.getPagePermissions('123');
+      expect(result).toBeDefined();
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://confluence.example.com/rest/api/content/123/restriction',
+        expect.any(Object)
+      );
+    });
+
+    it('should set page permissions', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const restrictions = [
+        { operation: 'read' as const, restrictions: { user: [{ name: 'admin' }] } },
+      ];
+      await client.setPagePermissions('123', restrictions);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://confluence.example.com/rest/api/content/123/restriction',
+        expect.objectContaining({
+          method: 'PUT',
+          body: expect.stringContaining('"operation":"read"'),
+        })
+      );
+    });
+  });
+
+  describe('getRecentlyModifiedPages', () => {
+    it('should get recently modified pages', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ results: [] }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.getRecentlyModifiedPages();
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER%20BY%20lastmodified%20DESC'),
+        expect.any(Object)
+      );
+    });
+
+    it('should filter by space', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ results: [] }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.getRecentlyModifiedPages('DEV');
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('space%3D%22DEV%22'),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('getPageTasks', () => {
+    it('should extract tasks from page content', async () => {
+      const pageWithTasks = {
+        id: '123',
+        body: {
+          storage: {
+            value: `<p>Some content</p>
+              <ac:task>
+                <ac:task-id>1</ac:task-id>
+                <ac:task-status>incomplete</ac:task-status>
+                <ac:task-body>First task</ac:task-body>
+              </ac:task>
+              <ac:task>
+                <ac:task-id>2</ac:task-id>
+                <ac:task-status>complete</ac:task-status>
+                <ac:task-body>Second task</ac:task-body>
+              </ac:task>`,
+          },
+        },
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(pageWithTasks),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.getPageTasks('123');
+      expect(result.results).toHaveLength(2);
+      expect(result.results[0].id).toBe('1');
+      expect(result.results[0].status).toBe('incomplete');
+      expect(result.results[1].status).toBe('complete');
+    });
+
+    it('should return empty array when no tasks', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: '123', body: { storage: { value: '<p>No tasks</p>' } } }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.getPageTasks('123');
+      expect(result.results).toHaveLength(0);
+    });
+  });
+
+  describe('exportPage', () => {
+    it('should generate PDF export URL for Server/DC', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: '123', space: { key: 'DEV' } }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.exportPage('123', 'pdf');
+      expect(result.downloadUrl).toContain('pdfpageexport');
+      expect(result.downloadUrl).toContain('pageId=123');
+    });
+
+    it('should generate PDF export URL for Cloud', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: '123', space: { key: 'DEV' } }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://mycompany.atlassian.net',
+        pat: 'test-token',
+        username: 'user@example.com',
+      });
+
+      const result = await client.exportPage('123', 'pdf');
+      expect(result.downloadUrl).toContain('/spaces/DEV/pages/123/export/pdf');
+      expect(result.message).toContain('Confluence PDF Export');
+    });
+
+    it('should generate Word export URL', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: '123', space: { key: 'DEV' } }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.exportPage('123', 'word');
+      expect(result.downloadUrl).toContain('exportword');
+      expect(result.downloadUrl).toContain('pageId=123');
+    });
+
+    it('should default to PDF format', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: '123', space: { key: 'DEV' } }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.exportPage('123');
+      expect(result.downloadUrl).toContain('pdfpageexport');
+    });
+  });
+
+  describe('setPagePermissions Cloud vs Server', () => {
+    it('should use accountId for Cloud users', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://mycompany.atlassian.net',
+        pat: 'test-token',
+        username: 'user@example.com',
+      });
+
+      const restrictions = [
+        { operation: 'read' as const, restrictions: { user: [{ accountId: '5b10ac8d' }] } },
+      ];
+      await client.setPagePermissions('123', restrictions);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"accountId":"5b10ac8d"'),
+        })
+      );
+    });
+
+    it('should use name for Server/DC users', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const restrictions = [
+        { operation: 'read' as const, restrictions: { user: [{ name: 'admin' }] } },
+      ];
+      await client.setPagePermissions('123', restrictions);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"name":"admin"'),
+        })
+      );
+    });
+  });
 });
