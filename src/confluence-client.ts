@@ -918,11 +918,23 @@ export class ConfluenceClient {
       tasks.push({
         id: match[1],
         status: match[2],
-        body: match[3].replace(/<[^>]+>/g, '').trim(), // Strip HTML tags for readability
+        body: this.stripHtmlTagsForReadability(match[3]), // Strip HTML tags for readability
       });
     }
     
     return { results: tasks };
+  }
+
+  private stripHtmlTagsForReadability(input: string): string {
+    let current = input || '';
+    let previous: string;
+
+    do {
+      previous = current;
+      current = current.replace(/<[^>]+>/g, '');
+    } while (current !== previous);
+
+    return current.trim();
   }
 
   // ==================== EXPORT ====================
