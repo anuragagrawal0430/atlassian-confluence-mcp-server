@@ -1,6 +1,6 @@
 {
   "name": "atlassian-confluence-mcp-server",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Model Context Protocol (MCP) server for Atlassian Confluence. Enables AI assistants like Claude and Windsurf to read, create, search, and manage wiki pages on Cloud, on-premise Server, and Data Center.",
   "main": "dist/index.js",
   "type": "commonjs",
