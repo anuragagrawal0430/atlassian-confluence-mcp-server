@@ -316,6 +316,289 @@ describe('ConfluenceClient', () => {
     });
   });
 
+  describe('large page editing', () => {
+    it('should patch a page and increment version server-side', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Big Page',
+            version: { number: 5 },
+            body: { storage: { value: '<p>Old text</p>' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123', title: 'Big Page', version: { number: 6 } }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.patchPage(
+        '123',
+        [{ oldString: 'Old text', newString: 'New text' }],
+        5
+      );
+
+      expect(result.version).toBe(6);
+      const secondCall = mockFetch.mock.calls[1];
+      const payload = JSON.parse((secondCall[1] as any).body);
+      expect(payload.version.number).toBe(6);
+      expect(payload.body.storage.value).toContain('New text');
+    });
+
+    it('should reject ambiguous patch operation without replaceAll', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          id: '123',
+          title: 'Big Page',
+          version: { number: 5 },
+          body: { storage: { value: 'foo foo' } },
+        }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await expect(
+        client.patchPage('123', [{ oldString: 'foo', newString: 'bar' }])
+      ).rejects.toThrow('matched 2 times');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should replace all occurrences when replaceAll is true', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Big Page',
+            version: { number: 5 },
+            body: { storage: { value: 'foo foo foo' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123', title: 'Big Page', version: { number: 6 } }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.patchPage('123', [{ oldString: 'foo', newString: 'bar', replaceAll: true }]);
+      const payload = JSON.parse((mockFetch.mock.calls[1][1] as any).body);
+      expect(payload.body.storage.value).toBe('bar bar bar');
+    });
+
+    it('should append and prepend content', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Page',
+            version: { number: 3 },
+            body: { storage: { value: 'middle' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123', title: 'Page', version: { number: 4 } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Page',
+            version: { number: 4 },
+            body: { storage: { value: 'middle-end' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123', title: 'Page', version: { number: 5 } }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await client.appendToPage('123', '-end', 'append');
+      let payload = JSON.parse((mockFetch.mock.calls[1][1] as any).body);
+      expect(payload.body.storage.value).toBe('middle-end');
+
+      await client.appendToPage('123', 'start-', 'prepend');
+      payload = JSON.parse((mockFetch.mock.calls[3][1] as any).body);
+      expect(payload.body.storage.value).toBe('start-middle-end');
+    });
+
+    it('should reject replacePageRange when both line and offset modes are supplied', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          id: '123',
+          title: 'Page',
+          version: { number: 1 },
+          body: { storage: { value: 'abcdef' } },
+        }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await expect(
+        client.replacePageRange('123', 'X', {
+          startOffset: 1,
+          endOffset: 2,
+          startLine: 1,
+          endLine: 1,
+        })
+      ).rejects.toThrow('Provide either startOffset/endOffset or startLine/endLine, not both');
+    });
+
+    it('should replace an offset range in the middle of a page', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Page',
+            version: { number: 2 },
+            body: { storage: { value: '0123456789' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123', title: 'Page', version: { number: 3 } }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.replacePageRange(
+        '123',
+        'ABC',
+        { startOffset: 2, endOffset: 5 },
+        '234',
+        2
+      );
+
+      const payload = JSON.parse((mockFetch.mock.calls[1][1] as any).body);
+      expect(payload.body.storage.value).toBe('01ABC56789');
+      expect(result.addressingMode).toBe('offset');
+      expect(result.version).toBe(3);
+    });
+
+    it('should replace a line range', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            id: '123',
+            title: 'Page',
+            version: { number: 4 },
+            body: { storage: { value: 'line1\nline2\nline3\nline4' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ id: '123', title: 'Page', version: { number: 5 } }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.replacePageRange(
+        '123',
+        'X\nY\n',
+        { startLine: 2, endLine: 3 }
+      );
+
+      const payload = JSON.parse((mockFetch.mock.calls[1][1] as any).body);
+      expect(payload.body.storage.value).toBe('line1\nX\nY\nline4');
+      expect(result.addressingMode).toBe('line');
+      expect(result.totalLines).toBe(4);
+    });
+
+    it('should reject line mode when requested lines exceed available lines', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          id: '123',
+          title: 'Page',
+          version: { number: 1 },
+          body: { storage: { value: 'single-line' } },
+        }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await expect(
+        client.replacePageRange('123', 'X', { startLine: 2, endLine: 2 })
+      ).rejects.toThrow('line count');
+    });
+
+    it('should return page body chunk metadata for large content', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          id: '123',
+          title: 'Page',
+          version: { number: 8 },
+          body: { storage: { value: 'abcdef\nghi' } },
+        }),
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      const result = await client.getPageBodyChunk('123', 2, 4);
+      expect(result.chunk).toBe('cdef');
+      expect(result.offset).toBe(2);
+      expect(result.length).toBe(4);
+      expect(result.totalLength).toBe(10);
+      expect(result.totalLines).toBe(2);
+      expect(result.hasMore).toBe(true);
+    });
+  });
+
   describe('deletePage', () => {
     it('should delete a page', async () => {
       mockFetch.mockResolvedValueOnce({

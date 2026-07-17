@@ -10,7 +10,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 ## Why atlassian-confluence-mcp-server?
 
 - ✅ Only MCP server supporting **Cloud + Server + Data Center** in one package
-- ✅ **42 tools** — most comprehensive Confluence MCP available
+- ✅ **46 tools** — most comprehensive Confluence MCP available
 - ✅ Zero config via `npx` — no install needed
 - ✅ PAT, Basic Auth, and API token support
 - ✅ Actively maintained with provenance-signed releases
@@ -23,7 +23,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 | On-premise Server | ✅ | ❌ |
 | Data Center | ✅ | ❌ |
 | Zero config via npx | ✅ | ❌ |
-| **42 tools** | ✅ | ~15 tools |
+| **46 tools** | ✅ | ~15 tools |
 | Space management (create/delete) | ✅ | ❌ |
 | Page copy/move | ✅ | ❌ |
 | Watchers | ✅ | ❌ |
@@ -198,7 +198,7 @@ CONFLUENCE_PASSWORD=your-password
 }
 ```
 
-## Available Tools (42)
+## Available Tools (46)
 
 ### Connection
 | Tool | Description |
@@ -223,6 +223,10 @@ CONFLUENCE_PASSWORD=your-password
 | `confluence_get_page_by_title` | Get page by title within a space |
 | `confluence_create_page` | Create a new page |
 | `confluence_update_page` | Update an existing page |
+| `confluence_patch_page` | Server-side exact find/replace patch for large pages |
+| `confluence_replace_page_range` | Replace middle range using offsets or line numbers |
+| `confluence_append_to_page` | Append or prepend content server-side |
+| `confluence_get_page_body_chunk` | Read large page body in offset/length chunks |
 | `confluence_delete_page` | Delete a page |
 | `confluence_copy_page` | Copy a page, optionally to a different space |
 | `confluence_move_page` | Move a page to a different parent or space |
@@ -351,6 +355,24 @@ Pages use Confluence storage format (XHTML):
   <ac:plain-text-body><![CDATA[console.log("Hello");]]></ac:plain-text-body>
 </ac:structured-macro>
 ```
+
+### Editing Very Large Pages
+
+When a page body is very large (for example hundreds of KB), avoid sending the full body through `confluence_update_page`.
+
+Recommended workflow:
+
+1. Use `confluence_get_page_body_chunk` to inspect the relevant part of the page.
+2. Use one of:
+   - `confluence_patch_page` for exact find/replace edits.
+   - `confluence_replace_page_range` for replacing a specific middle range.
+   - `confluence_append_to_page` for incremental append/prepend updates.
+
+Notes:
+
+- Offset-based range replacement is the most reliable mode for storage XHTML.
+- Line-based replacement requires actual newline characters in the stored body.
+- These tools still perform a full Confluence update under the hood, but the full body remains server-side.
 
 ## Security
 

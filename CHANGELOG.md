@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Large-page editing support with server-side body mutation tools:
+  - `confluence_patch_page` for exact find/replace operations
+  - `confluence_replace_page_range` for middle-range replacement via offsets or line numbers
+  - `confluence_append_to_page` for append/prepend updates
+  - `confluence_get_page_body_chunk` for chunked body reads with offset metadata
+- Optimistic locking support for large-page edit tools via optional `expectedVersion`
+- Range safety check via optional `expectedText` in range replacement
+
+### Changed
+- Updated page tool descriptions to direct large-body workflows toward server-side patch/range/chunk tools
+
 ## [1.0.0] - 2026-03-21
 
 ### Added

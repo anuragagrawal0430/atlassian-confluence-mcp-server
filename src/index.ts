@@ -135,7 +135,7 @@ const tools = [
   },
   {
     name: 'confluence_get_page',
-    description: 'Get a specific page by ID',
+    description: 'Get a specific page by ID (for very large pages, prefer confluence_get_page_body_chunk)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -197,7 +197,7 @@ const tools = [
   },
   {
     name: 'confluence_update_page',
-    description: 'Update an existing page',
+    description: 'Update an existing page with a full new body (for very large pages, prefer patch/range/append tools)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -219,6 +219,137 @@ const tools = [
         },
       },
       required: ['pageId', 'title', 'body', 'version'],
+    },
+  },
+  {
+    name: 'confluence_patch_page',
+    description: 'Patch page body using exact find/replace edits server-side (recommended for very large pages)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to patch',
+        },
+        edits: {
+          type: 'array',
+          description: 'Array of exact replacement operations to apply in order',
+          items: {
+            type: 'object',
+            properties: {
+              oldString: {
+                type: 'string',
+                description: 'Exact text to find',
+              },
+              newString: {
+                type: 'string',
+                description: 'Replacement text',
+              },
+              replaceAll: {
+                type: 'boolean',
+                description: 'Replace all matches instead of only one',
+              },
+            },
+            required: ['oldString', 'newString'],
+          },
+        },
+        expectedVersion: {
+          type: 'number',
+          description: 'Optional optimistic locking version check',
+        },
+      },
+      required: ['pageId', 'edits'],
+    },
+  },
+  {
+    name: 'confluence_replace_page_range',
+    description: 'Replace a contiguous middle range server-side using offsets or line numbers (offsets are preferred for storage XHTML)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to update',
+        },
+        newContent: {
+          type: 'string',
+          description: 'Replacement content for the specified range',
+        },
+        startOffset: {
+          type: 'number',
+          description: 'Start character offset (inclusive); provide with endOffset',
+        },
+        endOffset: {
+          type: 'number',
+          description: 'End character offset (exclusive); provide with startOffset',
+        },
+        startLine: {
+          type: 'number',
+          description: 'Start line (1-indexed, inclusive); provide with endLine',
+        },
+        endLine: {
+          type: 'number',
+          description: 'End line (1-indexed, inclusive); provide with startLine',
+        },
+        expectedText: {
+          type: 'string',
+          description: 'Optional expected content currently in that range (exact or first/last 100 chars)',
+        },
+        expectedVersion: {
+          type: 'number',
+          description: 'Optional optimistic locking version check',
+        },
+      },
+      required: ['pageId', 'newContent'],
+    },
+  },
+  {
+    name: 'confluence_append_to_page',
+    description: 'Append or prepend content to a page body server-side (recommended for building large pages incrementally)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID to update',
+        },
+        content: {
+          type: 'string',
+          description: 'Content to append or prepend',
+        },
+        position: {
+          type: 'string',
+          enum: ['append', 'prepend'],
+          description: 'Whether to append (default) or prepend content',
+        },
+        expectedVersion: {
+          type: 'number',
+          description: 'Optional optimistic locking version check',
+        },
+      },
+      required: ['pageId', 'content'],
+    },
+  },
+  {
+    name: 'confluence_get_page_body_chunk',
+    description: 'Read a page body in chunks by character offset/length (useful for very large pages)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'The page ID',
+        },
+        offset: {
+          type: 'number',
+          description: 'Start character offset (default: 0)',
+        },
+        length: {
+          type: 'number',
+          description: 'Requested chunk length (default: 50000, max: 100000)',
+        },
+      },
+      required: ['pageId'],
     },
   },
   {
@@ -883,6 +1014,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           args?.title as string,
           args?.body as string,
           args?.version as number
+        );
+        break;
+
+      case 'confluence_patch_page':
+        result = await confluenceClient.patchPage(
+          args?.pageId as string,
+          args?.edits as Array<{ oldString: string; newString: string; replaceAll?: boolean }>,
+          args?.expectedVersion as number | undefined
+        );
+        break;
+
+      case 'confluence_replace_page_range':
+        result = await confluenceClient.replacePageRange(
+          args?.pageId as string,
+          args?.newContent as string,
+          {
+            startOffset: args?.startOffset as number | undefined,
+            endOffset: args?.endOffset as number | undefined,
+            startLine: args?.startLine as number | undefined,
+            endLine: args?.endLine as number | undefined,
+          },
+          args?.expectedText as string | undefined,
+          args?.expectedVersion as number | undefined
+        );
+        break;
+
+      case 'confluence_append_to_page':
+        result = await confluenceClient.appendToPage(
+          args?.pageId as string,
+          args?.content as string,
+          (args?.position as 'append' | 'prepend' | undefined) ?? 'append',
+          args?.expectedVersion as number | undefined
+        );
+        break;
+
+      case 'confluence_get_page_body_chunk':
+        result = await confluenceClient.getPageBodyChunk(
+          args?.pageId as string,
+          args?.offset as number,
+          args?.length as number
         );
         break;
 

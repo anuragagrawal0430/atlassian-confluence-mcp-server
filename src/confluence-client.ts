@@ -24,6 +24,26 @@ export interface Space {
   };
 }
 
+export interface PageEditOperation {
+  oldString: string;
+  newString: string;
+  replaceAll?: boolean;
+}
+
+export interface PageRange {
+  startOffset?: number;
+  endOffset?: number;
+  startLine?: number;
+  endLine?: number;
+}
+
+interface EditablePageSnapshot {
+  id: string;
+  title: string;
+  body: string;
+  version: number;
+}
+
 export interface Page {
   id: string;
   type: string;
@@ -156,6 +176,105 @@ export class ConfluenceClient {
     return value.trim();
   }
 
+  private static requireString(value: unknown, paramName: string): string {
+    if (typeof value !== 'string') {
+      throw new Error(`${paramName} is required and must be a string`);
+    }
+    return value;
+  }
+
+  private static toPositiveInteger(value: number, paramName: string): number {
+    const safeValue = Number(value);
+    if (!Number.isInteger(safeValue) || safeValue < 1) {
+      throw new Error(`${paramName} must be a positive integer`);
+    }
+    return safeValue;
+  }
+
+  private static toNonNegativeInteger(value: number, paramName: string): number {
+    const safeValue = Number(value);
+    if (!Number.isInteger(safeValue) || safeValue < 0) {
+      throw new Error(`${paramName} must be a non-negative integer`);
+    }
+    return safeValue;
+  }
+
+  private static countOccurrences(input: string, searchValue: string): number {
+    let count = 0;
+    let index = input.indexOf(searchValue);
+
+    while (index !== -1) {
+      count += 1;
+      index = input.indexOf(searchValue, index + searchValue.length);
+    }
+
+    return count;
+  }
+
+  private static replaceFirstOccurrence(input: string, searchValue: string, replacement: string): string {
+    const index = input.indexOf(searchValue);
+    if (index === -1) {
+      return input;
+    }
+
+    return `${input.slice(0, index)}${replacement}${input.slice(index + searchValue.length)}`;
+  }
+
+  private static countLines(input: string): number {
+    if (input.length === 0) {
+      return 1;
+    }
+
+    let lineCount = 1;
+    for (let i = 0; i < input.length; i += 1) {
+      if (input[i] === '\n') {
+        lineCount += 1;
+      }
+    }
+
+    return lineCount;
+  }
+
+  private static resolveLineRange(
+    input: string,
+    startLine: number,
+    endLine: number
+  ): { startOffset: number; endOffset: number; totalLines: number } {
+    const lineStarts: number[] = [0];
+    for (let i = 0; i < input.length; i += 1) {
+      if (input[i] === '\n') {
+        lineStarts.push(i + 1);
+      }
+    }
+
+    const totalLines = lineStarts.length;
+    if (startLine > totalLines || endLine > totalLines) {
+      throw new Error(`Requested line range exceeds page line count (${totalLines})`);
+    }
+
+    const startOffset = lineStarts[startLine - 1];
+    const endOffset = endLine < totalLines ? lineStarts[endLine] : input.length;
+    return { startOffset, endOffset, totalLines };
+  }
+
+  private static matchesExpectedText(expectedText: string, actualText: string): boolean {
+    if (expectedText === actualText) {
+      return true;
+    }
+
+    const edgeLength = 100;
+    if (expectedText.length < edgeLength * 2 || actualText.length < edgeLength * 2) {
+      return false;
+    }
+
+    const expectedPrefix = expectedText.slice(0, edgeLength);
+    const actualPrefix = actualText.slice(0, edgeLength);
+    const expectedSuffix = expectedText.slice(-edgeLength);
+    const actualSuffix = actualText.slice(-edgeLength);
+
+    return expectedPrefix === actualPrefix && expectedSuffix === actualSuffix;
+  }
+
   private static clampLimit(limit?: number): number {
     if (limit === undefined || limit === null) return 25;
     return Math.max(1, Math.min(Number(limit) || 25, MAX_LIMIT));
@@ -244,6 +363,74 @@ export class ConfluenceClient {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async getEditablePageSnapshot(pageId: string): Promise<EditablePageSnapshot> {
+    const id = ConfluenceClient.sanitizeParam(pageId, 'pageId');
+    const prefix = this.getApiPrefix();
+    const page = await this.request<any>(
+      `${prefix}/rest/api/content/${encodeURIComponent(id)}?expand=body.storage,version`
+    );
+    const version = Number(page?.version?.number);
+
+    if (!Number.isInteger(version) || version < 1) {
+      throw new Error('Could not determine current page version');
+    }
+
+    return {
+      id,
+      title: typeof page?.title === 'string' ? page.title : '',
+      body: typeof page?.body?.storage?.value === 'string' ? page.body.storage.value : '',
+      version,
+    };
+  }
+
+  private validateExpectedVersion(currentVersion: number, expectedVersion?: number): void {
+    if (expectedVersion === undefined || expectedVersion === null) {
+      return;
+    }
+
+    const safeExpectedVersion = ConfluenceClient.toPositiveInteger(expectedVersion, 'expectedVersion');
+    if (safeExpectedVersion !== currentVersion) {
+      throw new Error(
+        `Version mismatch: expected ${safeExpectedVersion}, current ${currentVersion}`
+      );
+    }
+  }
+
+  private async savePageBody(snapshot: EditablePageSnapshot, body: string): Promise<any> {
+    const prefix = this.getApiPrefix();
+    const payload = {
+      type: 'page',
+      title: snapshot.title,
+      body: {
+        storage: {
+          value: body,
+          representation: 'storage',
+        },
+      },
+      version: {
+        number: snapshot.version + 1,
+      },
+    };
+
+    return this.request<any>(`${prefix}/rest/api/content/${encodeURIComponent(snapshot.id)}`, 'PUT', payload);
+  }
+
+  private buildPageEditSummary(
+    updatedPage: any,
+    snapshot: EditablePageSnapshot,
+    details: Record<string, unknown>
+  ): Record<string, unknown> {
+    const resolvedVersion = Number(updatedPage?.version?.number);
+    return {
+      pageId: updatedPage?.id ?? snapshot.id,
+      title: typeof updatedPage?.title === 'string' ? updatedPage.title : snapshot.title,
+      version: Number.isInteger(resolvedVersion) && resolvedVersion > 0
+        ? resolvedVersion
+        : snapshot.version + 1,
+      ...details,
+    };
   }
 
   // ==================== SPACES ====================
@@ -364,6 +551,203 @@ export class ConfluenceClient {
     };
 
     return this.request<any>(`${prefix}/rest/api/content/${encodeURIComponent(id)}`, 'PUT', payload);
+  }
+
+  async patchPage(
+    pageId: string,
+    edits: PageEditOperation[],
+    expectedVersion?: number
+  ): Promise<any> {
+    if (!Array.isArray(edits) || edits.length === 0) {
+      throw new Error('edits must be a non-empty array');
+    }
+
+    const snapshot = await this.getEditablePageSnapshot(pageId);
+    this.validateExpectedVersion(snapshot.version, expectedVersion);
+
+    let updatedBody = snapshot.body;
+    const replacementSummary: Array<{ index: number; replacedCount: number }> = [];
+
+    edits.forEach((edit, index) => {
+      const oldString = ConfluenceClient.requireString(edit?.oldString, `edits[${index}].oldString`);
+      const newString = ConfluenceClient.requireString(edit?.newString, `edits[${index}].newString`);
+
+      if (oldString.length === 0) {
+        throw new Error(`edits[${index}].oldString must be a non-empty string`);
+      }
+      if (oldString === newString) {
+        throw new Error(`edits[${index}] oldString and newString must differ`);
+      }
+
+      const occurrenceCount = ConfluenceClient.countOccurrences(updatedBody, oldString);
+      if (occurrenceCount === 0) {
+        throw new Error(`edits[${index}].oldString was not found in the page body`);
+      }
+
+      const replaceAll = Boolean(edit?.replaceAll);
+      if (!replaceAll && occurrenceCount > 1) {
+        throw new Error(
+          `edits[${index}].oldString matched ${occurrenceCount} times; set replaceAll=true to replace all occurrences`
+        );
+      }
+
+      if (replaceAll) {
+        updatedBody = updatedBody.split(oldString).join(newString);
+      } else {
+        updatedBody = ConfluenceClient.replaceFirstOccurrence(updatedBody, oldString, newString);
+      }
+
+      replacementSummary.push({
+        index,
+        replacedCount: replaceAll ? occurrenceCount : 1,
+      });
+    });
+
+    const updatedPage = await this.savePageBody(snapshot, updatedBody);
+    return this.buildPageEditSummary(updatedPage, snapshot, {
+      bodyLength: updatedBody.length,
+      replacementSummary,
+    });
+  }
+
+  async appendToPage(
+    pageId: string,
+    content: string,
+    position: 'append' | 'prepend' = 'append',
+    expectedVersion?: number
+  ): Promise<any> {
+    const safeContent = ConfluenceClient.requireString(content, 'content');
+    if (safeContent.length === 0) {
+      throw new Error('content must be a non-empty string');
+    }
+    if (position !== 'append' && position !== 'prepend') {
+      throw new Error('position must be either "append" or "prepend"');
+    }
+
+    const snapshot = await this.getEditablePageSnapshot(pageId);
+    this.validateExpectedVersion(snapshot.version, expectedVersion);
+
+    const updatedBody = position === 'prepend'
+      ? `${safeContent}${snapshot.body}`
+      : `${snapshot.body}${safeContent}`;
+    const updatedPage = await this.savePageBody(snapshot, updatedBody);
+
+    return this.buildPageEditSummary(updatedPage, snapshot, {
+      position,
+      addedLength: safeContent.length,
+      bodyLength: updatedBody.length,
+    });
+  }
+
+  async replacePageRange(
+    pageId: string,
+    newContent: string,
+    range: PageRange,
+    expectedText?: string,
+    expectedVersion?: number
+  ): Promise<any> {
+    const safeNewContent = ConfluenceClient.requireString(newContent, 'newContent');
+    const snapshot = await this.getEditablePageSnapshot(pageId);
+    this.validateExpectedVersion(snapshot.version, expectedVersion);
+
+    const hasOffsetInputs = range?.startOffset !== undefined || range?.endOffset !== undefined;
+    const hasLineInputs = range?.startLine !== undefined || range?.endLine !== undefined;
+
+    if (hasOffsetInputs && hasLineInputs) {
+      throw new Error('Provide either startOffset/endOffset or startLine/endLine, not both');
+    }
+    if (!hasOffsetInputs && !hasLineInputs) {
+      throw new Error('A range is required: provide startOffset/endOffset or startLine/endLine');
+    }
+
+    let startOffset: number;
+    let endOffset: number;
+    let addressingMode: 'offset' | 'line';
+    let totalLines = ConfluenceClient.countLines(snapshot.body);
+
+    if (hasOffsetInputs) {
+      if (range.startOffset === undefined || range.endOffset === undefined) {
+        throw new Error('Both startOffset and endOffset are required for offset mode');
+      }
+
+      startOffset = ConfluenceClient.toNonNegativeInteger(range.startOffset, 'startOffset');
+      endOffset = ConfluenceClient.toNonNegativeInteger(range.endOffset, 'endOffset');
+      if (endOffset < startOffset) {
+        throw new Error('endOffset must be greater than or equal to startOffset');
+      }
+
+      addressingMode = 'offset';
+    } else {
+      if (range.startLine === undefined || range.endLine === undefined) {
+        throw new Error('Both startLine and endLine are required for line mode');
+      }
+
+      const startLine = ConfluenceClient.toPositiveInteger(range.startLine, 'startLine');
+      const endLine = ConfluenceClient.toPositiveInteger(range.endLine, 'endLine');
+      if (endLine < startLine) {
+        throw new Error('endLine must be greater than or equal to startLine');
+      }
+
+      const resolvedRange = ConfluenceClient.resolveLineRange(snapshot.body, startLine, endLine);
+      startOffset = resolvedRange.startOffset;
+      endOffset = resolvedRange.endOffset;
+      totalLines = resolvedRange.totalLines;
+      addressingMode = 'line';
+    }
+
+    if (endOffset > snapshot.body.length) {
+      throw new Error(`Range end (${endOffset}) exceeds body length (${snapshot.body.length})`);
+    }
+
+    const replacedText = snapshot.body.slice(startOffset, endOffset);
+    if (expectedText !== undefined) {
+      const safeExpectedText = ConfluenceClient.requireString(expectedText, 'expectedText');
+      if (!ConfluenceClient.matchesExpectedText(safeExpectedText, replacedText)) {
+        throw new Error('expectedText did not match the current content in the specified range');
+      }
+    }
+
+    const updatedBody = `${snapshot.body.slice(0, startOffset)}${safeNewContent}${snapshot.body.slice(endOffset)}`;
+    const updatedPage = await this.savePageBody(snapshot, updatedBody);
+
+    return this.buildPageEditSummary(updatedPage, snapshot, {
+      addressingMode,
+      startOffset,
+      endOffset,
+      replacedLength: replacedText.length,
+      newLength: safeNewContent.length,
+      bodyLength: updatedBody.length,
+      totalLines,
+    });
+  }
+
+  async getPageBodyChunk(
+    pageId: string,
+    offset: number = 0,
+    length: number = 50_000
+  ): Promise<any> {
+    const snapshot = await this.getEditablePageSnapshot(pageId);
+    const safeOffset = ConfluenceClient.toNonNegativeInteger(offset, 'offset');
+
+    const parsedLength = Number(length);
+    const safeLength = Number.isInteger(parsedLength) && parsedLength > 0
+      ? Math.min(parsedLength, 100_000)
+      : 50_000;
+    const chunk = snapshot.body.slice(safeOffset, safeOffset + safeLength);
+    const totalLength = snapshot.body.length;
+    const totalLines = ConfluenceClient.countLines(snapshot.body);
+
+    return {
+      pageId: snapshot.id,
+      title: snapshot.title,
+      version: snapshot.version,
+      offset: safeOffset,
+      length: chunk.length,
+      totalLength,
+      totalLines,
+      hasMore: safeOffset + safeLength < totalLength,
+      chunk,
+    };
   }
 
   async deletePage(pageId: string): Promise<void> {
