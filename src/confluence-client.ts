@@ -10,6 +10,7 @@ export interface ConfluenceConfig {
   password?: string;
   isCloud?: boolean;
   timeoutMs?: number;
+  allowInsecureHttp?: boolean;
 }
 
 export interface Space {
@@ -124,6 +125,7 @@ export interface Comment {
 
 export class ConfluenceClient {
   private baseUrl: string;
+  private baseOrigin: string;
   private pat?: string;
   private username?: string;
   private password?: string;
@@ -131,9 +133,11 @@ export class ConfluenceClient {
   private timeoutMs: number;
 
   constructor(config: ConfluenceConfig) {
-    this.validateBaseUrl(config.baseUrl);
+    const allowInsecureHttp = Boolean(config.allowInsecureHttp);
+    this.validateBaseUrl(config.baseUrl, allowInsecureHttp);
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     const parsedBaseUrl = new URL(this.baseUrl);
+    this.baseOrigin = parsedBaseUrl.origin;
     const hostname = parsedBaseUrl.hostname.toLowerCase();
     // Strip accidental "Bearer " prefix if user included it in the token value
     this.pat = config.pat?.replace(/^Bearer\s+/i, '');
@@ -145,7 +149,7 @@ export class ConfluenceClient {
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  private validateBaseUrl(url: string): void {
+  private validateBaseUrl(url: string, allowInsecureHttp: boolean): void {
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -156,17 +160,55 @@ export class ConfluenceClient {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new Error('URL must use http or https protocol');
     }
-    // Prevent SSRF attacks by blocking localhost/internal IPs in production
-    // Users connecting to local dev instances should use explicit hostnames
+
     const hostname = parsed.hostname.toLowerCase();
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-      // Allow localhost for development, but log a warning
+
+    if (parsed.protocol === 'http:') {
+      const isLoopbackHost =
+        hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+
+      if (!allowInsecureHttp) {
+        throw new Error(
+          'HTTP is disabled by default for credential-bearing connections. Use HTTPS or set CONFLUENCE_ALLOW_INSECURE_HTTP=true for localhost-only development.'
+        );
+      }
+
+      if (!isLoopbackHost) {
+        throw new Error(
+          'Insecure HTTP is only allowed for localhost/loopback hosts when CONFLUENCE_ALLOW_INSECURE_HTTP=true'
+        );
+      }
+
+      console.warn('Warning: Insecure HTTP enabled for localhost/loopback Confluence instance');
+    } else if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
       console.warn('Warning: Connecting to localhost Confluence instance');
     }
+
     // Block URLs with credentials embedded (security best practice)
     if (parsed.username || parsed.password) {
       throw new Error('URL must not contain embedded credentials');
     }
+  }
+
+  private ensureConfluenceOrigin(candidateUrl: string, context: string, baseUrl?: string): URL {
+    let parsed: URL;
+    try {
+      parsed = baseUrl ? new URL(candidateUrl, baseUrl) : new URL(candidateUrl);
+    } catch (e) {
+      throw new Error(
+        `${context} is not a valid URL: ${e instanceof Error ? e.message : 'malformed URL'}`
+      );
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error(`${context} must use http or https protocol`);
+    }
+
+    if (parsed.origin !== this.baseOrigin) {
+      throw new Error(`${context} must stay on the configured Confluence origin (${this.baseOrigin})`);
+    }
+
+    return parsed;
   }
 
   private static sanitizeParam(value: string, paramName: string): string {
@@ -976,13 +1018,14 @@ export class ConfluenceClient {
    * the redirect chain until a page ID can be extracted.
    */
   private async resolveTinyUrl(pageUrl: string): Promise<string> {
-    let currentUrl = pageUrl;
+    let currentUrl = this.ensureConfluenceOrigin(pageUrl, 'Tiny URL').toString();
     // Follow up to 5 redirects
     for (let i = 0; i < 5; i++) {
+      const safeCurrentUrl = this.ensureConfluenceOrigin(currentUrl, 'Tiny URL redirect');
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
-        const response = await fetch(currentUrl, {
+        const response = await fetch(safeCurrentUrl.toString(), {
           method: 'GET',
           headers: this.getHeaders(),
           redirect: 'manual',
@@ -996,10 +1039,12 @@ export class ConfluenceClient {
           break;
         }
 
-        // Resolve relative redirects
-        currentUrl = location.startsWith('http')
-          ? location
-          : `${this.baseUrl}${location}`;
+        const resolvedRedirect = this.ensureConfluenceOrigin(
+          location,
+          'Tiny URL redirect',
+          safeCurrentUrl.toString()
+        );
+        currentUrl = resolvedRedirect.toString();
 
         // Check if we can already extract a page ID
         const idMatch = currentUrl.match(/\/pages\/(\d+)/);
@@ -1026,26 +1071,28 @@ export class ConfluenceClient {
   }
 
   async getPageByUrl(pageUrl: string): Promise<any> {
-    ConfluenceClient.sanitizeParam(pageUrl, 'pageUrl');
+    const safePageUrl = ConfluenceClient.sanitizeParam(pageUrl, 'pageUrl');
+
+    if (safePageUrl.startsWith('http://') || safePageUrl.startsWith('https://')) {
+      this.ensureConfluenceOrigin(safePageUrl, 'pageUrl');
+    }
 
     // Handle Cloud tiny URL: /wiki/x/IDENTIFIER or /x/IDENTIFIER
-    const tinyMatch = pageUrl.match(/\/(?:wiki\/)?x\/([A-Za-z0-9_-]+)\s*$/);
+    const tinyMatch = safePageUrl.match(/\/(?:wiki\/)?x\/([A-Za-z0-9_-]+)\s*$/);
     if (tinyMatch) {
-      const fullTinyUrl = pageUrl.startsWith('http')
-        ? pageUrl
-        : `${this.baseUrl}${pageUrl}`;
+      const fullTinyUrl = this.ensureConfluenceOrigin(safePageUrl, 'Tiny URL', this.baseUrl).toString();
       const pageId = await this.resolveTinyUrl(fullTinyUrl);
       return this.getPage(pageId);
     }
 
     // Handle Cloud URL: /wiki/spaces/SPACEKEY/pages/PAGEID/Title
-    const cloudPagesMatch = pageUrl.match(/\/(?:wiki\/)?spaces\/[^\/]+\/pages\/(\d+)/);
+    const cloudPagesMatch = safePageUrl.match(/\/(?:wiki\/)?spaces\/[^\/]+\/pages\/(\d+)/);
     if (cloudPagesMatch) {
       return this.getPage(cloudPagesMatch[1]);
     }
 
     // Handle Server/DC URL: /display/SPACEKEY/Page+Title
-    const displayMatch = pageUrl.match(/\/display\/([^\/]+)\/(.+)$/);
+    const displayMatch = safePageUrl.match(/\/display\/([^\/]+)\/(.+)$/);
     if (displayMatch) {
       const spaceKey = decodeURIComponent(displayMatch[1]);
       const title = decodeURIComponent(displayMatch[2].replace(/\+/g, ' '));
@@ -1053,7 +1100,7 @@ export class ConfluenceClient {
     }
     
     // Handle ?pageId=12345 format
-    const pageIdMatch = pageUrl.match(/pageId=(\d+)/);
+    const pageIdMatch = safePageUrl.match(/pageId=(\d+)/);
     if (pageIdMatch) {
       return this.getPage(pageIdMatch[1]);
     }

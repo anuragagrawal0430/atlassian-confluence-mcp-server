@@ -23,12 +23,28 @@ describe('ConfluenceClient', () => {
       expect(client).toBeDefined();
     });
 
-    it('should accept valid http URL', () => {
-      const client = new ConfluenceClient({
+    it('should reject http URL by default', () => {
+      expect(() => new ConfluenceClient({
         baseUrl: 'http://confluence.example.com',
         pat: 'test-token',
+      })).toThrow('HTTP is disabled by default');
+    });
+
+    it('should allow insecure localhost http when explicitly enabled', () => {
+      const client = new ConfluenceClient({
+        baseUrl: 'http://localhost:8090',
+        pat: 'test-token',
+        allowInsecureHttp: true,
       });
       expect(client).toBeDefined();
+    });
+
+    it('should reject insecure non-loopback http even when explicitly enabled', () => {
+      expect(() => new ConfluenceClient({
+        baseUrl: 'http://confluence.example.com',
+        pat: 'test-token',
+        allowInsecureHttp: true,
+      })).toThrow('Insecure HTTP is only allowed for localhost/loopback hosts');
     });
 
     it('should strip trailing slash from baseUrl', () => {
@@ -784,9 +800,43 @@ describe('ConfluenceClient', () => {
         pat: 'test-token',
       });
 
-      await expect(client.getPageByUrl('https://example.com/unknown/format')).rejects.toThrow(
+      await expect(client.getPageByUrl('https://confluence.example.com/unknown/format')).rejects.toThrow(
         'Unsupported Confluence URL format'
       );
+    });
+
+    it('should reject tiny URLs on a different origin before making a request', async () => {
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await expect(client.getPageByUrl('https://evil.example.com/wiki/x/abc123')).rejects.toThrow(
+        'pageUrl must stay on the configured Confluence origin'
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject cross-origin redirects while resolving tiny URLs', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'location'
+            ? 'https://evil.example.com/pages/12345'
+            : null),
+        },
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await expect(client.getPageByUrl('https://confluence.example.com/wiki/x/abc123')).rejects.toThrow(
+        'Tiny URL redirect must stay on the configured Confluence origin'
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 

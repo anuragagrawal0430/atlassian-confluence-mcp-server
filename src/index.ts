@@ -18,6 +18,44 @@ const PAT = process.env.PAT;
 const CONFLUENCE_USERNAME = process.env.CONFLUENCE_USERNAME;
 const CONFLUENCE_PASSWORD = process.env.CONFLUENCE_PASSWORD;
 
+function parseBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined) {
+    return defaultValue;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  console.error(`Error: ${name} must be a boolean value (true/false)`);
+  process.exit(1);
+}
+
+function parseCsvEnv(name: string): string[] | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+
+  const items = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return items.length > 0 ? items : undefined;
+}
+
+const CONFLUENCE_ALLOW_INSECURE_HTTP = parseBooleanEnv('CONFLUENCE_ALLOW_INSECURE_HTTP', false);
+const CONFLUENCE_READ_ONLY = parseBooleanEnv('CONFLUENCE_READ_ONLY', true);
+const CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS = parseBooleanEnv('CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS', false);
+const CONFLUENCE_ENABLED_TOOLS = parseCsvEnv('CONFLUENCE_ENABLED_TOOLS');
+const CONFLUENCE_ALLOWED_SPACES = parseCsvEnv('CONFLUENCE_ALLOWED_SPACES');
+
 if (!CONFLUENCE_BASE_URL) {
   console.error('Error: CONFLUENCE_BASE_URL environment variable is required');
   process.exit(1);
@@ -30,12 +68,27 @@ if (!PAT && (!CONFLUENCE_USERNAME || !CONFLUENCE_PASSWORD)) {
   process.exit(1);
 }
 
-const confluenceClient = new ConfluenceClient({
-  baseUrl: CONFLUENCE_BASE_URL,
-  pat: PAT,
-  username: CONFLUENCE_USERNAME,
-  password: CONFLUENCE_PASSWORD,
-});
+let confluenceClient: ConfluenceClient;
+try {
+  confluenceClient = new ConfluenceClient({
+    baseUrl: CONFLUENCE_BASE_URL,
+    pat: PAT,
+    username: CONFLUENCE_USERNAME,
+    password: CONFLUENCE_PASSWORD,
+    allowInsecureHttp: CONFLUENCE_ALLOW_INSECURE_HTTP,
+  });
+} catch (error) {
+  const message = error instanceof Error ? error.message : 'Unknown initialization error';
+  console.error(`Error: ${message}`);
+  process.exit(1);
+}
+
+if (CONFLUENCE_READ_ONLY) {
+  console.error('Security mode: read-only (mutating tools are disabled)');
+}
+if (!CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS) {
+  console.error('Security mode: destructive tools are disabled');
+}
 
 const server = new Server(
   {
@@ -52,7 +105,7 @@ const server = new Server(
 
 // ==================== TOOL DEFINITIONS ====================
 
-const tools = [
+const allTools = [
   // Connection
   {
     name: 'confluence_test_connection',
@@ -942,6 +995,124 @@ const tools = [
   },
 ];
 
+const MUTATING_TOOL_NAMES = new Set([
+  'confluence_create_page',
+  'confluence_update_page',
+  'confluence_patch_page',
+  'confluence_replace_page_range',
+  'confluence_append_to_page',
+  'confluence_delete_page',
+  'confluence_add_page_label',
+  'confluence_delete_page_label',
+  'confluence_add_page_comment',
+  'confluence_create_page_in_personal_space',
+  'confluence_create_private_space',
+  'confluence_create_space',
+  'confluence_delete_space',
+  'confluence_copy_page',
+  'confluence_move_page',
+  'confluence_watch_page',
+  'confluence_unwatch_page',
+  'confluence_set_page_permissions',
+]);
+
+const DESTRUCTIVE_TOOL_NAMES = new Set([
+  'confluence_delete_page',
+  'confluence_delete_space',
+  'confluence_set_page_permissions',
+]);
+
+const allToolNames = new Set(allTools.map((tool) => tool.name));
+const configuredEnabledToolSet = CONFLUENCE_ENABLED_TOOLS
+  ? new Set(CONFLUENCE_ENABLED_TOOLS)
+  : undefined;
+const configuredAllowedSpaceSet = CONFLUENCE_ALLOWED_SPACES
+  ? new Set(CONFLUENCE_ALLOWED_SPACES.map((space) => space.trim().toUpperCase()).filter(Boolean))
+  : undefined;
+
+if (configuredAllowedSpaceSet && configuredAllowedSpaceSet.size === 0) {
+  console.error('Error: CONFLUENCE_ALLOWED_SPACES must contain at least one non-empty space key');
+  process.exit(1);
+}
+
+if (configuredEnabledToolSet) {
+  const unknownTools = Array.from(configuredEnabledToolSet).filter((toolName) => !allToolNames.has(toolName));
+  if (unknownTools.length > 0) {
+    console.error(
+      `Error: CONFLUENCE_ENABLED_TOOLS contains unknown tools: ${unknownTools.join(', ')}`
+    );
+    process.exit(1);
+  }
+}
+
+function getDisabledReason(toolName: string): string | null {
+  if (configuredEnabledToolSet && !configuredEnabledToolSet.has(toolName)) {
+    return 'not listed in CONFLUENCE_ENABLED_TOOLS';
+  }
+
+  if (CONFLUENCE_READ_ONLY && MUTATING_TOOL_NAMES.has(toolName)) {
+    return 'server is in read-only mode (CONFLUENCE_READ_ONLY=true)';
+  }
+
+  if (!CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS && DESTRUCTIVE_TOOL_NAMES.has(toolName)) {
+    return 'destructive tools are disabled (set CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS=true to enable)';
+  }
+
+  return null;
+}
+
+function isToolEnabled(toolName: string): boolean {
+  return getDisabledReason(toolName) === null;
+}
+
+function getRequestedSpaceKeys(args: unknown): string[] {
+  if (!args || typeof args !== 'object') {
+    return [];
+  }
+
+  const argMap = args as Record<string, unknown>;
+  const requestedSpaceKeys: string[] = [];
+
+  for (const fieldName of ['spaceKey', 'destinationSpaceKey']) {
+    const value = argMap[fieldName];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      requestedSpaceKeys.push(value.trim().toUpperCase());
+    }
+  }
+
+  return requestedSpaceKeys;
+}
+
+function getSpaceRestrictionError(args: unknown): string | null {
+  if (!configuredAllowedSpaceSet) {
+    return null;
+  }
+
+  const requestedSpaceKeys = getRequestedSpaceKeys(args);
+  if (requestedSpaceKeys.length === 0) {
+    return null;
+  }
+
+  const disallowedSpace = requestedSpaceKeys.find((spaceKey) => !configuredAllowedSpaceSet.has(spaceKey));
+  if (!disallowedSpace) {
+    return null;
+  }
+
+  return `space ${disallowedSpace} is not in CONFLUENCE_ALLOWED_SPACES`;
+}
+
+const tools = allTools
+  .filter((tool) => isToolEnabled(tool.name))
+  .map((tool) => ({
+    ...tool,
+    annotations: {
+      readOnlyHint: !MUTATING_TOOL_NAMES.has(tool.name),
+      destructiveHint: DESTRUCTIVE_TOOL_NAMES.has(tool.name),
+      idempotentHint: !MUTATING_TOOL_NAMES.has(tool.name),
+      openWorldHint: true,
+    },
+  }));
+
 // ==================== TOOL HANDLERS ====================
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -950,6 +1121,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+
+  if (allToolNames.has(name)) {
+    const disabledReason = getDisabledReason(name);
+    if (disabledReason) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: Tool ${name} is disabled: ${disabledReason}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const spaceRestrictionError = getSpaceRestrictionError(args);
+    if (spaceRestrictionError) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: Tool ${name} is blocked: ${spaceRestrictionError}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
 
   try {
     let result: unknown;

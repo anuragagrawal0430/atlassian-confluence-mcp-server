@@ -89,6 +89,11 @@ All configuration is passed through **environment variables**. Never hard-code c
 | `PAT` | See below | API token (Cloud) or Personal Access Token (Server/DC) |
 | `CONFLUENCE_USERNAME` | Cloud only | Your Atlassian account email |
 | `CONFLUENCE_PASSWORD` | Alt auth | Password or API token for Basic Auth |
+| `CONFLUENCE_READ_ONLY` | No | Defaults to `true`; set to `false` to allow mutating tools |
+| `CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS` | No | Defaults to `false`; set to `true` to allow delete/permission mutation tools |
+| `CONFLUENCE_ENABLED_TOOLS` | No | Optional comma-separated allowlist of tool names to expose |
+| `CONFLUENCE_ALLOWED_SPACES` | No | Optional comma-separated allowlist of space keys for requests with `spaceKey`/`destinationSpaceKey` |
+| `CONFLUENCE_ALLOW_INSECURE_HTTP` | No | Defaults to `false`; only allows `http://` for localhost/loopback when set to `true` |
 
 ### Confluence Cloud
 
@@ -126,6 +131,41 @@ For older Server versions without PAT support, use username/password:
 CONFLUENCE_BASE_URL=https://confluence.example.com
 CONFLUENCE_USERNAME=your-username
 CONFLUENCE_PASSWORD=your-password
+```
+
+### Security Controls (important)
+
+The server now uses secure defaults to reduce prompt-injection blast radius and credential leakage risk:
+
+- `CONFLUENCE_READ_ONLY=true` by default
+  - Mutating tools are disabled unless you set `CONFLUENCE_READ_ONLY=false`.
+- `CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS=false` by default
+  - `confluence_delete_page`, `confluence_delete_space`, and `confluence_set_page_permissions` remain disabled unless explicitly enabled.
+- `CONFLUENCE_ENABLED_TOOLS` (optional)
+  - Restrict exposure to an explicit tool allowlist.
+- `CONFLUENCE_ALLOWED_SPACES` (optional)
+  - Restrict requests that include `spaceKey` / `destinationSpaceKey` to an approved set.
+- `CONFLUENCE_ALLOW_INSECURE_HTTP=false` by default
+  - HTTPS is required unless this is set to `true`.
+  - Even when enabled, insecure HTTP is restricted to localhost/loopback only.
+
+Example (enable safe writes, keep destructive tools disabled):
+
+```env
+CONFLUENCE_READ_ONLY=false
+CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS=false
+```
+
+Example (strict allowlist):
+
+```env
+CONFLUENCE_ENABLED_TOOLS=confluence_get_page,confluence_search_pages,confluence_get_page_body_chunk
+```
+
+Example (space-level allowlist):
+
+```env
+CONFLUENCE_ALLOWED_SPACES=ENG,SECURITY
 ```
 
 ## MCP Client Configuration
@@ -199,6 +239,8 @@ CONFLUENCE_PASSWORD=your-password
 ```
 
 ## Available Tools (46)
+
+Note: tool exposure depends on security configuration. With the default `CONFLUENCE_READ_ONLY=true`, mutating tools are intentionally hidden/blocked.
 
 ### Connection
 | Tool | Description |
