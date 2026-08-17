@@ -387,7 +387,10 @@ export class ConfluenceClient {
         response = await fetch(url, options);
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AbortError') {
-          throw new Error(`Request timed out after ${this.timeoutMs}ms: ${method} ${endpoint}`);
+          const mutationWarning = method !== 'GET'
+            ? ' — NOTE: the operation may have completed on the server. Verify before retrying; do not create under a modified title.'
+            : '';
+          throw new Error(`Request timed out after ${this.timeoutMs}ms: ${method} ${endpoint}${mutationWarning}`);
         }
         throw error;
       }
