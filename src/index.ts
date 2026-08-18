@@ -50,11 +50,31 @@ function parseCsvEnv(name: string): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
+function parsePositiveIntegerEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number(raw.trim());
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    console.error(`Error: ${name} must be a positive integer (bytes)`);
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
 const CONFLUENCE_ALLOW_INSECURE_HTTP = parseBooleanEnv('CONFLUENCE_ALLOW_INSECURE_HTTP', false);
 const CONFLUENCE_READ_ONLY = parseBooleanEnv('CONFLUENCE_READ_ONLY', true);
 const CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS = parseBooleanEnv('CONFLUENCE_ENABLE_DESTRUCTIVE_TOOLS', false);
 const CONFLUENCE_ENABLED_TOOLS = parseCsvEnv('CONFLUENCE_ENABLED_TOOLS');
 const CONFLUENCE_ALLOWED_SPACES = parseCsvEnv('CONFLUENCE_ALLOWED_SPACES');
+const CONFLUENCE_MAX_ATTACHMENT_BYTES = parsePositiveIntegerEnv(
+  'CONFLUENCE_MAX_ATTACHMENT_BYTES',
+  50 * 1024 * 1024
+);
+const CONFLUENCE_UPLOAD_ALLOWED_DIRS = parseCsvEnv('CONFLUENCE_UPLOAD_ALLOWED_DIRS');
 
 if (!CONFLUENCE_BASE_URL) {
   console.error('Error: CONFLUENCE_BASE_URL environment variable is required');
@@ -76,6 +96,8 @@ try {
     username: CONFLUENCE_USERNAME,
     password: CONFLUENCE_PASSWORD,
     allowInsecureHttp: CONFLUENCE_ALLOW_INSECURE_HTTP,
+    maxAttachmentBytes: CONFLUENCE_MAX_ATTACHMENT_BYTES,
+    uploadAllowedDirs: CONFLUENCE_UPLOAD_ALLOWED_DIRS,
   });
 } catch (error) {
   const message = error instanceof Error ? error.message : 'Unknown initialization error';
@@ -573,6 +595,42 @@ const allTools = [
       required: ['commentId'],
     },
   },
+  {
+    name: 'confluence_upload_attachment',
+    description:
+      'Upload a local file as an attachment on a Confluence page or comment. Creates a new attachment, or updates an existing one with the same filename (versioning). Provide exactly one of pageId or commentId. Mutating tool — disabled when CONFLUENCE_READ_ONLY=true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pageId: {
+          type: 'string',
+          description: 'Target page content ID (exactly one of pageId or commentId required)',
+        },
+        commentId: {
+          type: 'string',
+          description: 'Target comment content ID (exactly one of pageId or commentId required)',
+        },
+        filePath: {
+          type: 'string',
+          description: 'Absolute path to a readable local file on the MCP host',
+        },
+        filename: {
+          type: 'string',
+          description: 'Optional attachment title/filename override. Defaults to basename(filePath).',
+        },
+        comment: {
+          type: 'string',
+          description: 'Optional attachment comment / version comment',
+        },
+        minorEdit: {
+          type: 'boolean',
+          description:
+            'If true, request minorEdit=true on the multipart form (suppress notifications where supported). Default false.',
+        },
+      },
+      required: ['filePath'],
+    },
+  },
   // Page Hierarchy
   {
     name: 'confluence_get_child_pages',
@@ -1005,6 +1063,7 @@ const MUTATING_TOOL_NAMES = new Set([
   'confluence_add_page_label',
   'confluence_delete_page_label',
   'confluence_add_page_comment',
+  'confluence_upload_attachment',
   'confluence_create_page_in_personal_space',
   'confluence_create_private_space',
   'confluence_create_space',
@@ -1317,6 +1376,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'confluence_get_comment_attachments':
         result = await confluenceClient.getCommentAttachments(args?.commentId as string);
         break;
+
+      case 'confluence_upload_attachment': {
+        const pageId = typeof args?.pageId === 'string' ? args.pageId.trim() : '';
+        const commentId = typeof args?.commentId === 'string' ? args.commentId.trim() : '';
+        if ((pageId && commentId) || (!pageId && !commentId)) {
+          throw new Error('Provide exactly one of pageId or commentId');
+        }
+
+        result = await confluenceClient.uploadAttachment({
+          contentId: pageId || commentId,
+          filePath: args?.filePath as string,
+          filename: args?.filename as string | undefined,
+          comment: args?.comment as string | undefined,
+          minorEdit: args?.minorEdit as boolean | undefined,
+        });
+        break;
+      }
 
       // Page Hierarchy
       case 'confluence_get_child_pages':

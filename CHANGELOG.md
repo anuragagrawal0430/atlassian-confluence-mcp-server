@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `confluence_get_page_body_chunk` for chunked body reads with offset metadata
 - Optimistic locking support for large-page edit tools via optional `expectedVersion`
 - Range safety check via optional `expectedText` in range replacement
+- `confluence_upload_attachment` tool to upload (or version-update) page/comment attachments from an absolute host file path (#47)
+- Optional `CONFLUENCE_MAX_ATTACHMENT_BYTES` (default 50 MB) client-side upload size limit
+- Security: `CONFLUENCE_UPLOAD_ALLOWED_DIRS` setting to restrict file uploads to allowed directories
 
 ### Changed
 - Updated page tool descriptions to direct large-body workflows toward server-side patch/range/chunk tools

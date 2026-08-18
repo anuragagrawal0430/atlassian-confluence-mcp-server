@@ -10,7 +10,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 ## Why atlassian-confluence-mcp-server?
 
 - ✅ Only MCP server supporting **Cloud + Server + Data Center** in one package
-- ✅ **46 tools** — most comprehensive Confluence MCP available
+- ✅ **47 tools** — most comprehensive Confluence MCP available
 - ✅ Zero config via `npx` — no install needed
 - ✅ PAT, Basic Auth, and API token support
 - ✅ Actively maintained with provenance-signed releases
@@ -23,7 +23,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 | On-premise Server | ✅ | ❌ |
 | Data Center | ✅ | ❌ |
 | Zero config via npx | ✅ | ❌ |
-| **46 tools** | ✅ | ~15 tools |
+| **47 tools** | ✅ | ~15 tools |
 | Space management (create/delete) | ✅ | ❌ |
 | Page copy/move | ✅ | ❌ |
 | Watchers | ✅ | ❌ |
@@ -40,7 +40,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 - **Search** — Full CQL and text search, recently modified pages
 - **Labels** — Add, list, and remove page labels
 - **Comments** — Read and post page comments
-- **Attachments** — List page and comment attachments
+- **Attachments** — List and upload page and comment attachments
 - **Page Hierarchy** — Navigate parent/child relationships
 - **Version History** — Browse and inspect page versions
 - **Watchers** — View and manage page watchers
@@ -94,6 +94,8 @@ All configuration is passed through **environment variables**. Never hard-code c
 | `CONFLUENCE_ENABLED_TOOLS` | No | Optional comma-separated allowlist of tool names to expose |
 | `CONFLUENCE_ALLOWED_SPACES` | No | Optional comma-separated allowlist of space keys for requests with `spaceKey`/`destinationSpaceKey` |
 | `CONFLUENCE_ALLOW_INSECURE_HTTP` | No | Defaults to `false`; only allows `http://` for localhost/loopback when set to `true` |
+| `CONFLUENCE_MAX_ATTACHMENT_BYTES` | No | Client-side max file size for `confluence_upload_attachment` in bytes (default: `52428800` / 50 MB). Confluence may still enforce a lower instance limit. |
+| `CONFLUENCE_UPLOAD_ALLOWED_DIRS` | No | **Security:** Comma-separated allowlist of absolute directory paths from which file uploads are allowed. Empty by default (uploads disabled). |
 
 ### Confluence Cloud
 
@@ -148,6 +150,12 @@ The server now uses secure defaults to reduce prompt-injection blast radius and 
 - `CONFLUENCE_ALLOW_INSECURE_HTTP=false` by default
   - HTTPS is required unless this is set to `true`.
   - Even when enabled, insecure HTTP is restricted to localhost/loopback only.
+- `CONFLUENCE_MAX_ATTACHMENT_BYTES` (optional, default 50 MB)
+  - Caps how large a host file `confluence_upload_attachment` will read before calling Confluence.
+  - Independent of the instance "Attachment Maximum Size" admin setting (not exposed via public REST).
+- `CONFLUENCE_UPLOAD_ALLOWED_DIRS` (optional, defaults to empty)
+  - Explicitly restricts which host directories the MCP server is allowed to read files from when uploading attachments.
+  - If not configured, file uploads from the host filesystem are entirely disabled.
 
 Example (enable safe writes, keep destructive tools disabled):
 
@@ -238,7 +246,7 @@ CONFLUENCE_ALLOWED_SPACES=ENG,SECURITY
 }
 ```
 
-## Available Tools (46)
+## Available Tools (47)
 
 Note: tool exposure depends on security configuration. With the default `CONFLUENCE_READ_ONLY=true`, mutating tools are intentionally hidden/blocked.
 
@@ -298,6 +306,7 @@ Note: tool exposure depends on security configuration. With the default `CONFLUE
 |------|-------------|
 | `confluence_get_page_attachments` | List attachments on a page |
 | `confluence_get_comment_attachments` | List attachments on a comment |
+| `confluence_upload_attachment` | Upload/upsert a local file as a page or comment attachment |
 
 ### Page Hierarchy
 | Tool | Description |

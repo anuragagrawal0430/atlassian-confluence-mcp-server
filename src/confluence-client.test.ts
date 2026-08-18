@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { ConfluenceClient } from './confluence-client';
 
 // Mock fetch globally
@@ -1560,6 +1563,279 @@ describe('ConfluenceClient', () => {
           body: expect.stringContaining('"name":"admin"'),
         })
       );
+    });
+  });
+
+  describe('uploadAttachment', () => {
+    let tempDir: string;
+    let tempFilePath: string;
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'confluence-upload-'));
+      tempFilePath = path.join(tempDir, 'diagram.png');
+      fs.writeFileSync(tempFilePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('should upload a file to a page with multipart form and nocheck header', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ results: [] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              results: [
+                {
+                  id: 'att1',
+                  status: 'current',
+                  title: 'diagram.png',
+                  extensions: { mediaType: 'image/png', fileSize: 4 },
+                  _links: { webui: '/pages/viewpage.action?pageId=123', download: '/download/attachments/123/diagram.png' },
+                },
+              ],
+            }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+        uploadAllowedDirs: [tempDir],
+      });
+
+      const result = await client.uploadAttachment({
+        contentId: '123',
+        filePath: tempFilePath,
+        comment: 'generated diagram',
+        minorEdit: true,
+      });
+
+      expect(result).toEqual({
+        id: 'att1',
+        status: 'current',
+        title: 'diagram.png',
+        mediaType: 'image/png',
+        fileSize: 4,
+        webuiLink: '/pages/viewpage.action?pageId=123',
+        downloadLink: '/download/attachments/123/diagram.png',
+      });
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        'https://confluence.example.com/rest/api/content/123/child/attachment?filename=diagram.png&limit=1',
+        expect.any(Object)
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        'https://confluence.example.com/rest/api/content/123/child/attachment',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer test-token',
+            'X-Atlassian-Token': 'nocheck',
+            Accept: 'application/json',
+          }),
+        })
+      );
+
+      const fetchOptions = mockFetch.mock.calls[1][1] as RequestInit;
+      expect(fetchOptions.headers).not.toHaveProperty('Content-Type');
+      expect(fetchOptions.body).toBeInstanceOf(FormData);
+
+      const form = fetchOptions.body as FormData;
+      const filePart = form.get('file');
+      expect(filePart).toBeInstanceOf(Blob);
+      expect(form.get('comment')).toBe('generated diagram');
+      expect(form.get('minorEdit')).toBe('true');
+    });
+
+    it('should update existing attachment data when filename already exists', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              results: [{ id: 'att-existing', title: 'diagram.png' }],
+            }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              id: 'att-existing',
+              status: 'current',
+              title: 'diagram.png',
+              extensions: { mediaType: 'image/png', fileSize: 4 },
+              _links: {
+                webui: '/pages/viewpage.action?pageId=123',
+                download: '/download/attachments/123/diagram.png?version=2',
+              },
+            }),
+        });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+        uploadAllowedDirs: [tempDir],
+      });
+
+      const result = await client.uploadAttachment({
+        contentId: '123',
+        filePath: tempFilePath,
+        comment: 'updated diagram',
+      });
+
+      expect(result.id).toBe('att-existing');
+      expect(result.downloadLink).toContain('version=2');
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        'https://confluence.example.com/rest/api/content/123/child/attachment/att-existing/data',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should reject paths if uploadAllowedDirs is not configured', async () => {
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+      });
+
+      await expect(
+        client.uploadAttachment({
+          contentId: '123',
+          filePath: tempFilePath,
+        })
+      ).rejects.toThrow('File uploads from the host filesystem are disabled');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject paths outside of uploadAllowedDirs', async () => {
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+        uploadAllowedDirs: [path.join(tempDir, 'allowed')],
+      });
+
+      await expect(
+        client.uploadAttachment({
+          contentId: '123',
+          filePath: tempFilePath, // this is in tempDir, but not tempDir/allowed
+        })
+      ).rejects.toThrow('Security Error: Path');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject symlinks', async () => {
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+        uploadAllowedDirs: [tempDir],
+      });
+
+      const symlinkPath = path.join(tempDir, 'diagram-link.png');
+      try {
+        fs.symlinkSync(tempFilePath, symlinkPath);
+      } catch (err) {
+        // Symlinks might fail on Windows without admin, skip if so
+        if (process.platform === 'win32') return;
+      }
+
+      await expect(
+        client.uploadAttachment({
+          contentId: '123',
+          filePath: symlinkPath,
+        })
+      ).rejects.toThrow('Uploading symbolic links is not permitted');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject paths containing parent segments', async () => {
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+        uploadAllowedDirs: [tempDir],
+      });
+
+      // Build without path.join so ".." remains a literal segment (join normalizes it away).
+      const traversalPath = `${tempDir}${path.sep}..${path.sep}${path.basename(tempDir)}${path.sep}diagram.png`;
+      await expect(
+        client.uploadAttachment({
+          contentId: '123',
+          filePath: traversalPath,
+        })
+      ).rejects.toThrow('filePath must not contain ".." path segments');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject files larger than the configured client limit', async () => {
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+        maxAttachmentBytes: 2,
+        uploadAllowedDirs: [tempDir],
+      });
+
+      await expect(
+        client.uploadAttachment({
+          contentId: '123',
+          filePath: tempFilePath,
+        })
+      ).rejects.toThrow('File exceeds client attachment size limit of 2 bytes');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+    
+    it('should append mutation warning on timeout in requestMultipart', async () => {
+      vi.useFakeTimers();
+      
+      // Let the first findAttachmentByFilename succeed
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ results: [] }),
+      });
+      
+      // The second request (POST) will hang and hit the abort controller timeout
+      mockFetch.mockImplementationOnce(async (url, options) => {
+        return new Promise((_, reject) => {
+          options.signal.addEventListener('abort', () => {
+            const err = new Error('The operation was aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        });
+      });
+
+      const client = new ConfluenceClient({
+        baseUrl: 'https://confluence.example.com',
+        pat: 'test-token',
+        timeoutMs: 100,
+        uploadAllowedDirs: [tempDir],
+      });
+
+      const promise = expect(
+        client.uploadAttachment({
+          contentId: '123',
+          filePath: tempFilePath,
+        })
+      ).rejects.toThrow(
+        /Request timed out after 100ms: POST \/rest\/api\/content\/123\/child\/attachment — NOTE: the operation may have completed on the server/
+      );
+
+      // Advance timers to trigger the timeout
+      await vi.advanceTimersByTimeAsync(200);
+
+      await promise;
+      
+      vi.useRealTimers();
     });
   });
 });
