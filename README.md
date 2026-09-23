@@ -52,7 +52,7 @@ An open-source **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/
 
 ## Prerequisites
 
-- **Node.js 18+**
+- **Node.js 22.12+**
 - A Confluence instance (Cloud or Server/Data Center 7.9+)
 - Authentication credentials (PAT or username/password)
 

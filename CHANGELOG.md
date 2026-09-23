@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated page tool descriptions to direct large-body workflows toward server-side patch/range/chunk tools
 
+## [2.0.0] - 2026-09-23
+
+### Removed
+- **BREAKING**: Dropped Node.js 20 support; Node.js >= 22.12.0 is now required (Node.js 20 reached end-of-life in April 2026)
+
+### Changed
+- Upgraded `dotenv` from 17.x to 18.0.0 — the `injected env` startup message now goes to stderr instead of stdout, so it can no longer corrupt the MCP stdio JSON-RPC stream when a `.env` file is present
+- Upgraded `vitest` from 4.x to 5.0.1 (dev)
+- Upgraded `@types/node` to 26.6.1 (dev)
+
 ## [1.0.0] - 2026-03-21
 
 ### Added
